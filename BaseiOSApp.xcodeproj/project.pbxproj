@@ -6,13 +6,8 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		ABA4AA8C2F4DF45B00F87246 /* App.app in Resources */ = {isa = PBXBuildFile; fileRef = ABA4AA8B2F4DF45B00F87246 /* App.app */; platformFilter = ios; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
-		ABA4A8092F4DE9A100F87246 /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		ABA4AA8B2F4DF45B00F87246 /* App.app */ = {isa = PBXFileReference; lastKnownFileType = wrapper.application; path = App.app; sourceTree = "<group>"; };
+		ABA4AE672F4E127500F87246 /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -50,9 +45,8 @@
 		AB97C8432F4A326800D24724 = {
 			isa = PBXGroup;
 			children = (
-				ABA4AA8B2F4DF45B00F87246 /* App.app */,
 				AB97C84E2F4A326800D24724 /* BaseiOSApp */,
-				ABA4A8092F4DE9A100F87246 /* BaseiOSApp.app */,
+				ABA4AE672F4E127500F87246 /* BaseiOSApp.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -78,7 +72,7 @@
 			packageProductDependencies = (
 			);
 			productName = BaseiOSApp;
-			productReference = ABA4A8092F4DE9A100F87246 /* BaseiOSApp.app */;
+			productReference = ABA4AE672F4E127500F87246 /* BaseiOSApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -119,7 +113,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ABA4AA8C2F4DF45B00F87246 /* App.app in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,7 +145,7 @@
 				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
 				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
-				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
@@ -161,7 +154,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
@@ -169,7 +162,9 @@
 				INFOPLIST_FILE = BaseiOSApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
@@ -181,27 +176,49 @@
 				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UIStatusBarHidden = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -210,19 +227,21 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.ohaiibuzzle.BaseiOSApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = 2;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -242,7 +261,7 @@
 				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
 				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
-				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
@@ -251,7 +270,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
@@ -259,7 +278,9 @@
 				INFOPLIST_FILE = BaseiOSApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
@@ -271,27 +292,49 @@
 				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UIStatusBarHidden = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -300,19 +343,21 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.ohaiibuzzle.BaseiOSApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = 2;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

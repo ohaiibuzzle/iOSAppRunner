@@ -9,9 +9,15 @@
 #include <dlfcn.h>
 #import "utils.h"
 #import "LCDyld.h"
+#import "UserNotifications/UserNotifications.h"
+#import "utils.h"
 
 @import Foundation;
 @import MachO;
+
+@interface UNUserNotificationCenter(private)
+@property (nonatomic, copy) NSString *bundleIdentifier;
+@end
 
 void* (*orig_dlsym)(void * __handle, const char * __symbol) = dlsym;
 uint32_t (*orig_dyld_image_count)(void) = _dyld_image_count;
@@ -23,6 +29,8 @@ extern uint32_t appMainImageIndex;
 uint32_t lcImageIndex = 0;
 bool appExecutableFileTypeOverwritten = false;
 extern void* appExecutableHandle;
+
+
 
 uint32_t hook_dyld_image_count(void) {
     return orig_dyld_image_count() - 1;
@@ -197,4 +205,9 @@ void overwriteExecPath(const char *newExecPath) {
     _NSGetExecutablePath((char*)newExecPath, NULL);
     // put the original function back
     performHookDyldApi("_NSGetExecutablePath", 2, (void**)&orig__NSGetExecutablePath, orig__NSGetExecutablePath);
+}
+
+__attribute__((constructor))
+static void UNHooksInit(void) {
+    [UNUserNotificationCenter.currentNotificationCenter setBundleIdentifier:[[NSBundle mainBundle] bundleIdentifier]];
 }

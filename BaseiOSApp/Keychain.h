@@ -5,4 +5,4 @@
 //  Created by Venti on 24/2/26.
 //
 
-void SecItemGuestHooksInit(NSString* groupId);
+void SecItemGuestHooksInit(NSString* hostId, NSString* groupId);

@@ -11,7 +11,7 @@
 #import "utils.h"
 #import "Keychain.h"
 #import <dlfcn.h>
-
+#import "BaseiOSApp-Swift.h"
 
 @import MachO;
 int appMainImageIndex = 0;
@@ -37,8 +37,32 @@ static void *getAppEntryPoint(void *handle) {
 
 
 int main(int argc, char * argv[]) {
-    // Load the App.app bundle from app resources
-    NSBundle *appBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"App" ofType:@"app"]];
+    NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    // NSBundle *appBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"App" ofType:@"app"]];
+
+    // Read app_to_launch.txt to get the name of the app bundle to load
+    NSString *appToLaunchPath = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
+    NSString *appBundleName = nil;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:appToLaunchPath]) {
+        appBundleName = [NSString stringWithContentsOfFile:appToLaunchPath encoding:NSUTF8StringEncoding error:nil];
+        appBundleName = [appBundleName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    } else {
+        appBundleName = @"App.app";
+    }
+
+    // Re-write the app bundle name to app_to_launch.txt for the next launch
+    [appBundleName writeToFile:appToLaunchPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    
+    // Check if the app bundle exists in [app sandbox data folder]/apps/[app bundle name], if not, throw an error and exit
+    NSString *appBundlePath = [NSHomeDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"apps/%@", appBundleName]];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:appBundlePath]) {
+        NSLog(@"App bundle not found at path: %@", appBundlePath);
+        return -1;
+    }
+
+    // Load the App.app bundle from [app sandbox data folder]/apps/[app bundle name]
+    NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
+
     NSLog([NSString stringWithFormat:@"Bundle loaded %@", appBundle.bundleIdentifier]);
     init_bypassDyldLibValidation();
     
@@ -78,7 +102,7 @@ int main(int argc, char * argv[]) {
     
     overwriteMainNSBundle(appBundle);
     overwriteMainCFBundle();
-    
+
     NSMutableArray<NSString *> *objcArgv = NSProcessInfo.processInfo.arguments.mutableCopy;
     objcArgv[0] = appBundle.executablePath;
     [NSProcessInfo.processInfo performSelector:@selector(setArguments:) withObject:objcArgv];
@@ -99,14 +123,16 @@ int main(int argc, char * argv[]) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
             hook_init();
-            SecItemGuestHooksInit(appBundle.bundleIdentifier);
+            SecItemGuestHooksInit(hostAppIdentifier,appBundle.bundleIdentifier);
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;
             if (handle) {
                 int (*appMain)(int, char **) = (int (*)(int, char **))getAppEntryPoint(handle);
                 NSLog(@"Successfully dlopened app's executable");
                 argv[0] = (char *)[executablePath UTF8String];
-                return appMain(argc, argv);
+                int retcode = appMain(argc, argv);
+                NSLog(@"App exited with code %@", retcode);
+                return retcode;
             } else {
                 NSLog(@"Failed to dlopen app's executable: %s", dlerror());
             }
@@ -114,4 +140,6 @@ int main(int argc, char * argv[]) {
             NSLog(@"Failed to load app bundle");
         }
     }
+    NSLog(@"Failed to launch app");
 }
+
