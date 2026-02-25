@@ -11,7 +11,6 @@
 #import "utils.h"
 #import "Keychain.h"
 #import <dlfcn.h>
-#import "BaseiOSApp-Swift.h"
 
 @import MachO;
 int appMainImageIndex = 0;
