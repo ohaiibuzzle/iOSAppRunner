@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "2630"
-   version = "1.7">
+   version = "2.0">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-               BuildableName = "BaseiOSApp.app"
-               BlueprintName = "BaseiOSApp"
-               ReferencedContainer = "container:BaseiOSApp.xcodeproj">
+               BuildableName = "iOSAppRunner.app"
+               BlueprintName = "iOSAppRunner"
+               ReferencedContainer = "container:iOSAppRunner.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -31,25 +31,41 @@
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      disableMainThreadChecker = "YES"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
-      debugDocumentVersioning = "YES"
+      enableGameKitDebugMode = "YES"
+      debugDocumentVersioning = "NO"
+      debugXPCServices = "NO"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES">
+      enableGPUValidationMode = "1"
+      allowLocationSimulation = "YES"
+      viewDebuggingEnabled = "No"
+      queueDebuggingEnabled = "No"
+      consoleMode = "0"
+      structuredConsoleMode = "1"
+      disablePerformanceAntipatternChecker = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-            BuildableName = "BaseiOSApp.app"
-            BlueprintName = "BaseiOSApp"
-            ReferencedContainer = "container:BaseiOSApp.xcodeproj">
+            BuildableName = "iOSAppRunner.app"
+            BlueprintName = "iOSAppRunner"
+            ReferencedContainer = "container:iOSAppRunner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <AdditionalOptions>
+         <AdditionalOption
+            key = "APP_DISTRIBUTOR_ID_OVERRIDE"
+            value = "com.apple.AppStore"
+            isEnabled = "YES">
+         </AdditionalOption>
+      </AdditionalOptions>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -62,9 +78,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-            BuildableName = "BaseiOSApp.app"
-            BlueprintName = "BaseiOSApp"
-            ReferencedContainer = "container:BaseiOSApp.xcodeproj">
+            BuildableName = "iOSAppRunner.app"
+            BlueprintName = "iOSAppRunner"
+            ReferencedContainer = "container:iOSAppRunner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

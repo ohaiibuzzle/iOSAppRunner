@@ -23,26 +23,26 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSAppRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7D90902F5ACEA30061186D /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dylibify; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7D90972F5ACECD0061186D /* convert.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = convert.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "BaseiOSApp" target */ = {
+		AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "iOSAppRunner" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Tests/main.c,
 				Tests/Makefile,
 			);
-			target = AB97C84B2F4A326800D24724 /* BaseiOSApp */;
+			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
 		};
-		AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "BaseiOSApp" target */ = {
+		AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "iOSAppRunner" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				main.m,
 			);
-			target = AB97C84B2F4A326800D24724 /* BaseiOSApp */;
+			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
 		};
 		AB7D90A12F5ACED50061186D /* Exceptions for "dylibify" folder in "dylibify" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -51,12 +51,12 @@
 			);
 			target = AB7D908F2F5ACEA30061186D /* dylibify */;
 		};
-		AB97C8632F4A326A00D24724 /* Exceptions for "BaseiOSApp" folder in "BaseiOSApp" target */ = {
+		AB97C8632F4A326A00D24724 /* Exceptions for "iOSAppRunner" folder in "iOSAppRunner" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = AB97C84B2F4A326800D24724 /* BaseiOSApp */;
+			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -64,7 +64,7 @@
 		AB7D90832F5AC9970061186D /* litehook */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "BaseiOSApp" target */,
+				AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "iOSAppRunner" target */,
 			);
 			path = litehook;
 			sourceTree = "<group>";
@@ -72,18 +72,18 @@
 		AB7D909E2F5ACED50061186D /* dylibify */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "BaseiOSApp" target */,
+				AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "iOSAppRunner" target */,
 				AB7D90A12F5ACED50061186D /* Exceptions for "dylibify" folder in "dylibify" target */,
 			);
 			path = dylibify;
 			sourceTree = "<group>";
 		};
-		AB97C84E2F4A326800D24724 /* BaseiOSApp */ = {
+		AB97C84E2F4A326800D24724 /* iOSAppRunner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AB97C8632F4A326A00D24724 /* Exceptions for "BaseiOSApp" folder in "BaseiOSApp" target */,
+				AB97C8632F4A326A00D24724 /* Exceptions for "iOSAppRunner" folder in "iOSAppRunner" target */,
 			);
-			path = BaseiOSApp;
+			path = iOSAppRunner;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -109,12 +109,12 @@
 		AB97C8432F4A326800D24724 = {
 			isa = PBXGroup;
 			children = (
-				AB97C84E2F4A326800D24724 /* BaseiOSApp */,
+				AB97C84E2F4A326800D24724 /* iOSAppRunner */,
 				AB7D90832F5AC9970061186D /* litehook */,
 				AB7D909E2F5ACED50061186D /* dylibify */,
 				AB7D90972F5ACECD0061186D /* convert.sh */,
 				AB7D90902F5ACEA30061186D /* dylibify */,
-				AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */,
+				AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -140,9 +140,9 @@
 			productReference = AB7D90902F5ACEA30061186D /* dylibify */;
 			productType = "com.apple.product-type.tool";
 		};
-		AB97C84B2F4A326800D24724 /* BaseiOSApp */ = {
+		AB97C84B2F4A326800D24724 /* iOSAppRunner */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "BaseiOSApp" */;
+			buildConfigurationList = AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "iOSAppRunner" */;
 			buildPhases = (
 				AB97C8482F4A326800D24724 /* Sources */,
 				AB97C8492F4A326800D24724 /* Frameworks */,
@@ -155,13 +155,13 @@
 			fileSystemSynchronizedGroups = (
 				AB7D90832F5AC9970061186D /* litehook */,
 				AB7D909E2F5ACED50061186D /* dylibify */,
-				AB97C84E2F4A326800D24724 /* BaseiOSApp */,
+				AB97C84E2F4A326800D24724 /* iOSAppRunner */,
 			);
-			name = BaseiOSApp;
+			name = iOSAppRunner;
 			packageProductDependencies = (
 			);
 			productName = BaseiOSApp;
-			productReference = AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */;
+			productReference = AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -181,7 +181,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AB97C8472F4A326800D24724 /* Build configuration list for PBXProject "BaseiOSApp" */;
+			buildConfigurationList = AB97C8472F4A326800D24724 /* Build configuration list for PBXProject "iOSAppRunner" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -195,7 +195,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AB97C84B2F4A326800D24724 /* BaseiOSApp */,
+				AB97C84B2F4A326800D24724 /* iOSAppRunner */,
 				AB7D908F2F5ACEA30061186D /* dylibify */,
 			);
 		};
@@ -260,7 +260,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = BaseiOSApp/BaseiOSApp.entitlements;
+				CODE_SIGN_ENTITLEMENTS = iOSAppRunner/iOSAppRunner.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -285,7 +285,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
-				INFOPLIST_FILE = BaseiOSApp/Info.plist;
+				INFOPLIST_FILE = iOSAppRunner/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
 				INFOPLIST_KEY_GCSupportsGameMode = YES;
@@ -377,7 +377,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = BaseiOSApp/BaseiOSApp.entitlements;
+				CODE_SIGN_ENTITLEMENTS = iOSAppRunner/iOSAppRunner.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -402,7 +402,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
-				INFOPLIST_FILE = BaseiOSApp/Info.plist;
+				INFOPLIST_FILE = iOSAppRunner/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
 				INFOPLIST_KEY_GCSupportsGameMode = YES;
@@ -620,7 +620,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AB97C8472F4A326800D24724 /* Build configuration list for PBXProject "BaseiOSApp" */ = {
+		AB97C8472F4A326800D24724 /* Build configuration list for PBXProject "iOSAppRunner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AB97C8672F4A326A00D24724 /* Debug */,
@@ -629,7 +629,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "BaseiOSApp" */ = {
+		AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "iOSAppRunner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AB97C8652F4A326A00D24724 /* Debug */,
