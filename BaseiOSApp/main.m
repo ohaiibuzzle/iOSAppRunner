@@ -62,11 +62,10 @@ int main(int argc, char * argv[]) {
     // Load the App.app bundle from [app sandbox data folder]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
 
-    NSLog([NSString stringWithFormat:@"Bundle loaded %@", appBundle.bundleIdentifier]);
+    NSLog(@"%@", [NSString stringWithFormat:@"Bundle loaded %@", appBundle.bundleIdentifier]);
     init_bypassDyldLibValidation();
     
     const char **path = _CFGetProcessPath();
-    const char *oldPath = *path;
         const char *appExecPath = appBundle.executablePath.fileSystemRepresentation;
     *path = appExecPath;
     overwriteExecPath(appExecPath);

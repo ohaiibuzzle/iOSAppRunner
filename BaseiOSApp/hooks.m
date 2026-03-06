@@ -5,12 +5,11 @@
 //  Created by Venti on 22/2/26.
 //
 
-#import "litehook/litehook.h"
-#include <dlfcn.h>
+#import <dlfcn.h>
+#import "hooks.h"
 #import "utils.h"
 #import "LCDyld.h"
 #import "UserNotifications/UserNotifications.h"
-#import "utils.h"
 
 @import Foundation;
 @import MachO;
@@ -211,3 +210,4 @@ __attribute__((constructor))
 static void UNHooksInit(void) {
     [UNUserNotificationCenter.currentNotificationCenter setBundleIdentifier:[[NSBundle mainBundle] bundleIdentifier]];
 }
+

@@ -7,10 +7,18 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		ABA4AE672F4E127500F87246 /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "BaseiOSApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/main.c,
+				Tests/Makefile,
+			);
+			target = AB97C84B2F4A326800D24724 /* BaseiOSApp */;
+		};
 		AB97C8632F4A326A00D24724 /* Exceptions for "BaseiOSApp" folder in "BaseiOSApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -21,6 +29,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AB7D90832F5AC9970061186D /* litehook */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "BaseiOSApp" target */,
+			);
+			path = litehook;
+			sourceTree = "<group>";
+		};
 		AB97C84E2F4A326800D24724 /* BaseiOSApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -46,7 +62,8 @@
 			isa = PBXGroup;
 			children = (
 				AB97C84E2F4A326800D24724 /* BaseiOSApp */,
-				ABA4AE672F4E127500F87246 /* BaseiOSApp.app */,
+				AB7D90832F5AC9970061186D /* litehook */,
+				AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -66,13 +83,14 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				AB7D90832F5AC9970061186D /* litehook */,
 				AB97C84E2F4A326800D24724 /* BaseiOSApp */,
 			);
 			name = BaseiOSApp;
 			packageProductDependencies = (
 			);
 			productName = BaseiOSApp;
-			productReference = ABA4AE672F4E127500F87246 /* BaseiOSApp.app */;
+			productReference = AB7D908B2F5AC9F70061186D /* BaseiOSApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -82,7 +100,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					AB97C84B2F4A326800D24724 = {
 						CreatedOnToolsVersion = 26.2;
@@ -159,6 +177,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
 				INFOPLIST_FILE = BaseiOSApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
@@ -275,6 +294,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
 				INFOPLIST_FILE = BaseiOSApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
@@ -420,6 +440,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 			};
 			name = Debug;
 		};
@@ -475,6 +496,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;

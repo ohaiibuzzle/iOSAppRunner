@@ -9,7 +9,7 @@
 #import <Security/Security.h>
 #import "utils.h"
 #import <CommonCrypto/CommonDigest.h>
-#import "litehook/litehook.h"
+#import "../litehook/src/litehook.h"
 
 SecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
 CFTypeRef SecTaskCopyValueForEntitlement(SecTaskRef task, CFStringRef entitlement, CFErrorRef *error);
@@ -27,7 +27,7 @@ OSStatus (*orig_SecKeyGeneratePair)(CFDictionaryRef query, SecKeyRef *publicKey,
 NSString* accessGroup = nil;
 NSString* containerId = nil;
 
-NSString* getTeamIdentifier() {
+NSString* getTeamIdentifier(void) {
     static NSString* ans = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{

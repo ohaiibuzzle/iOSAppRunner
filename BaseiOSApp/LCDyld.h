@@ -9,7 +9,7 @@
 #include <mach-o/dyld.h>
 #include <mach-o/dyld_images.h>
 #include <objc/runtime.h>
-#include "litehook/litehook.h"
+#import "../litehook/src/litehook.h"
 
 @import Foundation;
 
@@ -22,4 +22,3 @@ static const char syscallSig[] = {0x01, 0x10, 0x00, 0xD4};
 void overwriteMainCFBundle(void);
 void overwriteMainNSBundle(NSBundle *newBundle);
 void init_bypassDyldLibValidation(void);
-static void *getAppEntryPoint(void *handle);
