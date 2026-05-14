@@ -11,6 +11,13 @@
 #import "utils.h"
 #import "Keychain.h"
 #import <dlfcn.h>
+#import "Resolution.h"
+
+static int runHostLauncher(int argc, char *argv[]) {
+    @autoreleasepool {
+        return UIApplicationMain(argc, argv, nil, @"LauncherAppDelegate");
+    }
+}
 
 @import MachO;
 int appMainImageIndex = 0;
@@ -21,7 +28,7 @@ static void *getAppEntryPoint(void *handle) {
     const struct mach_header_64 *header = (struct mach_header_64 *)getGuestAppHeader();
     uint8_t *imageHeaderPtr = (uint8_t*)header + sizeof(struct mach_header_64);
     struct load_command *command = (struct load_command *)imageHeaderPtr;
-    for(int i = 0; i < header->ncmds > 0; ++i) {
+    for(int i = 0; i < header->ncmds; ++i) {
         if(command->cmd == LC_MAIN) {
             struct entry_point_command ucmd = *(struct entry_point_command *)imageHeaderPtr;
             entryoff = ucmd.entryoff;
@@ -36,28 +43,33 @@ static void *getAppEntryPoint(void *handle) {
 
 
 int main(int argc, char * argv[]) {
-    NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
-    // NSBundle *appBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"App" ofType:@"app"]];
-
-    // Read app_to_launch.txt to get the name of the app bundle to load
+    // Read app_to_launch.txt to get the name of the app bundle to load.
+    // When the selection is missing or invalid, fall through to the SwiftUI
+    // launcher (LauncherAppDelegate) so the user can pick / import apps.
+    NSError *error;
     NSString *appToLaunchPath = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
     NSString *appBundleName = nil;
     if ([[NSFileManager defaultManager] fileExistsAtPath:appToLaunchPath]) {
         appBundleName = [NSString stringWithContentsOfFile:appToLaunchPath encoding:NSUTF8StringEncoding error:nil];
         appBundleName = [appBundleName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    } else {
-        appBundleName = @"App.app";
     }
 
-    // Re-write the app bundle name to app_to_launch.txt for the next launch
-    [appBundleName writeToFile:appToLaunchPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    
-    // Check if the app bundle exists in [app sandbox data folder]/apps/[app bundle name], if not, throw an error and exit
-    NSString *appBundlePath = [NSHomeDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"apps/%@", appBundleName]];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:appBundlePath]) {
-        NSLog(@"App bundle not found at path: %@", appBundlePath);
-        return -1;
+    NSString *appBundlePath = nil;
+    if (appBundleName.length > 0) {
+        NSString *candidate = [NSHomeDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"apps/%@", appBundleName]];
+        BOOL isDir = NO;
+        if ([[NSFileManager defaultManager] fileExistsAtPath:candidate isDirectory:&isDir] && isDir) {
+            appBundlePath = candidate;
+        } else {
+            NSLog(@"Selected app bundle missing at %@; showing launcher", candidate);
+        }
     }
+
+    if (!appBundlePath) {
+        return runHostLauncher(argc, argv);
+    }
+
+    NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 
     // Load the App.app bundle from [app sandbox data folder]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
@@ -112,6 +124,9 @@ int main(int argc, char * argv[]) {
         SEL selector = @selector(arguments);
         method_setImplementation(class_getInstanceMethod(swiftNSProcessInfo, selector), class_getMethodImplementation(NSProcessInfo.class, selector));
     }
+    
+    // Remove the indicator (so next launch we go back to the main UI)
+    [[NSFileManager defaultManager] removeItemAtPath:appToLaunchPath error: &error];
 
     if (appBundle) {
         NSLog(@"Successfully loaded app bundle");
@@ -121,6 +136,7 @@ int main(int argc, char * argv[]) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
             hook_init();
+            DisplayHooksInit();
             SecItemGuestHooksInit(hostAppIdentifier,appBundle.bundleIdentifier);
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;
@@ -129,7 +145,7 @@ int main(int argc, char * argv[]) {
                 NSLog(@"Successfully dlopened app's executable");
                 argv[0] = (char *)[executablePath UTF8String];
                 int retcode = appMain(argc, argv);
-                NSLog(@"App exited with code %@", retcode);
+                NSLog(@"App exited with code %d", retcode);
                 return retcode;
             } else {
                 NSLog(@"Failed to dlopen app's executable: %s", dlerror());
@@ -139,5 +155,6 @@ int main(int argc, char * argv[]) {
         }
     }
     NSLog(@"Failed to launch app");
+    [[NSFileManager defaultManager] removeItemAtPath:appToLaunchPath error: &error];
 }
 

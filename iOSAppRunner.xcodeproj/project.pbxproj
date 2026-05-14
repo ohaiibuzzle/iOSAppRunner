@@ -23,8 +23,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSAppRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB7D90902F5ACEA30061186D /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dylibify; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSAppRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB7D90902F5ACEA30061186D /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; name = dylibify; path = /Users/ventithebard/Documents/Code/BaseiOSApp/build/Debug/dylibify; sourceTree = "<absolute>"; };
 		AB7D90972F5ACECD0061186D /* convert.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = convert.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -113,8 +113,7 @@
 				AB7D90832F5AC9970061186D /* litehook */,
 				AB7D909E2F5ACED50061186D /* dylibify */,
 				AB7D90972F5ACECD0061186D /* convert.sh */,
-				AB7D90902F5ACEA30061186D /* dylibify */,
-				AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */,
+				AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -161,7 +160,7 @@
 			packageProductDependencies = (
 			);
 			productName = BaseiOSApp;
-			productReference = AB7D908B2F5AC9F70061186D /* iOSAppRunner.app */;
+			productReference = AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -307,9 +306,6 @@
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
@@ -424,9 +420,6 @@
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
