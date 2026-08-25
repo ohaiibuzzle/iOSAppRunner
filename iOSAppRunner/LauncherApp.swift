@@ -8,6 +8,7 @@
 import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
+import Darwin
 
 // MARK: - Bridge to the on-device install/conversion pipeline.
 //
@@ -75,6 +76,12 @@ enum LauncherPaths {
     }
     static var appToLaunchFile: URL {
         home.appendingPathComponent("app_to_launch.txt")
+    }
+    /// Queue of pending launch requests. Each request is a `<uuid>.txt` file
+    /// containing a bundle name; a freshly-spawned instance atomically claims
+    /// one in `main.m` before UIKit starts.
+    static var pendingLaunchDirectory: URL {
+        home.appendingPathComponent("pending_launch", isDirectory: true)
     }
 }
 
@@ -190,14 +197,32 @@ final class LauncherModel: ObservableObject {
         reload()
     }
 
-    /// Writes the selection file then terminates the host so a fresh launch
-    /// can pick the guest up before any UIKit/CFBundle state is locked in.
-    func launchAndQuit(_ app: InstalledApp) {
+    /// Launches the guest in its own native window by spawning a fresh instance
+    /// of the host. The selection is passed through a queue file rather than
+    /// argv: a sandboxed Catalyst app cannot pass launch arguments through
+    /// `open` (LaunchServices strips them), so `main.m` atomically claims the
+    /// queued request before any UIKit/CFBundle state is locked in.
+    func launch(_ app: InstalledApp) {
         do {
-            try app.id.write(to: LauncherPaths.appToLaunchFile, atomically: true, encoding: .utf8)
-            exit(0)
+            let dir = LauncherPaths.pendingLaunchDirectory
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let request = dir.appendingPathComponent(UUID().uuidString + ".txt")
+            try app.id.write(to: request, atomically: true, encoding: .utf8)
         } catch {
-            errorMessage = "Failed to save selection: \(error.localizedDescription)"
+            errorMessage = "Failed to queue launch: \(error.localizedDescription)"
+            return
+        }
+
+        let args = ["/usr/bin/open", "-n", Bundle.main.bundlePath]
+        var pid: pid_t = 0
+        var argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        let rc = posix_spawn(&pid, args[0], nil, nil, &argv, environ)
+        for case let p? in argv { free(p) }
+
+        if rc == 0 {
+            status = "Launched \(app.displayName) in a new window"
+        } else {
+            errorMessage = "Failed to launch \(app.displayName) (open rc=\(rc))."
         }
     }
 
@@ -361,7 +386,7 @@ struct LauncherView: View {
                 titleVisibility: .visible
             ) {
                 if let app = pendingApp {
-                    Button("Launch & Quit") { model.launchAndQuit(app) }
+                    Button("Launch") { model.launch(app) }
                     Button("Delete", role: .destructive) {
                         model.delete(app)
                         pendingApp = nil
@@ -369,7 +394,7 @@ struct LauncherView: View {
                     Button("Cancel", role: .cancel) { pendingApp = nil }
                 }
             } message: {
-                Text("The host app will exit. Reopen it to start the selected app.")
+                Text("The app opens in a new window. The launcher stays open.")
             }
             .alert("Error",
                    isPresented: Binding(

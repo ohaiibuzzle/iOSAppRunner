@@ -11,12 +11,52 @@
 #import "utils.h"
 #import "Keychain.h"
 #import <dlfcn.h>
+#import <stdio.h>
+#import <unistd.h>
 #import "Resolution.h"
 
 static int runHostLauncher(int argc, char *argv[]) {
     @autoreleasepool {
         return UIApplicationMain(argc, argv, nil, @"LauncherAppDelegate");
     }
+}
+
+// Atomically claim the oldest queued launch request written by the launcher
+static NSString *claimPendingLaunch(void) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *pendingDir = [NSHomeDirectory() stringByAppendingPathComponent:@"pending_launch"];
+
+    NSArray<NSString *> *entries = [fm contentsOfDirectoryAtPath:pendingDir error:nil];
+    if (entries.count == 0) {
+        return nil;
+    }
+
+    // Oldest request first, so launches are honored in order.
+    NSArray<NSString *> *sorted = [entries sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        NSDate *da = [fm attributesOfItemAtPath:[pendingDir stringByAppendingPathComponent:a] error:nil].fileModificationDate;
+        NSDate *db = [fm attributesOfItemAtPath:[pendingDir stringByAppendingPathComponent:b] error:nil].fileModificationDate;
+        return [da compare:db];
+    }];
+
+    for (NSString *name in sorted) {
+        // Skip hidden files (including our own in-flight `.claimed-*` markers).
+        if ([name hasPrefix:@"."] || ![name.pathExtension isEqualToString:@"txt"]) {
+            continue;
+        }
+        NSString *src = [pendingDir stringByAppendingPathComponent:name];
+        NSString *dst = [pendingDir stringByAppendingPathComponent:
+                         [NSString stringWithFormat:@".claimed-%d-%@", getpid(), name]];
+        if (rename(src.fileSystemRepresentation, dst.fileSystemRepresentation) != 0) {
+            continue; // lost the race for this request; try the next one
+        }
+        NSString *bundleName = [[NSString stringWithContentsOfFile:dst encoding:NSUTF8StringEncoding error:nil]
+                                stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        unlink(dst.fileSystemRepresentation);
+        if (bundleName.length > 0) {
+            return bundleName;
+        }
+    }
+    return nil;
 }
 
 @import MachO;
@@ -43,13 +83,28 @@ static void *getAppEntryPoint(void *handle) {
 
 
 int main(int argc, char * argv[]) {
-    // Read app_to_launch.txt to get the name of the app bundle to load.
-    // When the selection is missing or invalid, fall through to the SwiftUI
-    // launcher (LauncherAppDelegate) so the user can pick / import apps.
+    // Determine which app bundle to load. When the selection is missing or
+    // invalid, fall through to the SwiftUI launcher (LauncherAppDelegate) so the
+    // user can pick / import apps.
     NSError *error;
     NSString *appToLaunchPath = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
     NSString *appBundleName = nil;
-    if ([[NSFileManager defaultManager] fileExistsAtPath:appToLaunchPath]) {
+
+    // Claim a queued launch request.
+    appBundleName = claimPendingLaunch();
+
+    // In case we pass --launch-app (for, eg. integration with PlayCover)
+    if (appBundleName.length == 0) {
+        for (int i = 1; i + 1 < argc; i++) {
+            if (strcmp(argv[i], "--launch-app") == 0) {
+                appBundleName = [NSString stringWithUTF8String:argv[i + 1]];
+                break;
+            }
+        }
+    }
+
+    // 3. Backward-compat: fall back to app_to_launch.txt.
+    if (appBundleName.length == 0 && [[NSFileManager defaultManager] fileExistsAtPath:appToLaunchPath]) {
         appBundleName = [NSString stringWithContentsOfFile:appToLaunchPath encoding:NSUTF8StringEncoding error:nil];
         appBundleName = [appBundleName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     }
@@ -114,6 +169,13 @@ int main(int argc, char * argv[]) {
     overwriteMainCFBundle();
 
     NSMutableArray<NSString *> *objcArgv = NSProcessInfo.processInfo.arguments.mutableCopy;
+    // Strip the launcher's private --launch-app <name> tokens so the guest sees
+    // a clean argument list.
+    NSUInteger launchFlagIdx = [objcArgv indexOfObject:@"--launch-app"];
+    if (launchFlagIdx != NSNotFound) {
+        NSUInteger len = MIN((NSUInteger)2, objcArgv.count - launchFlagIdx);
+        [objcArgv removeObjectsInRange:NSMakeRange(launchFlagIdx, len)];
+    }
     objcArgv[0] = appBundle.executablePath;
     [NSProcessInfo.processInfo performSelector:@selector(setArguments:) withObject:objcArgv];
     NSProcessInfo.processInfo.processName = appBundle.infoDictionary[@"CFBundleExecutable"];
@@ -143,8 +205,10 @@ int main(int argc, char * argv[]) {
             if (handle) {
                 int (*appMain)(int, char **) = (int (*)(int, char **))getAppEntryPoint(handle);
                 NSLog(@"Successfully dlopened app's executable");
-                argv[0] = (char *)[executablePath UTF8String];
-                int retcode = appMain(argc, argv);
+                // Hand the guest a clean argv (just its executable path) so our
+                // private --launch-app tokens never leak into the guest process.
+                char *guestArgv[] = { (char *)[executablePath UTF8String], NULL };
+                int retcode = appMain(1, guestArgv);
                 NSLog(@"App exited with code %d", retcode);
                 return retcode;
             } else {
