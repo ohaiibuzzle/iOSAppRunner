@@ -118,9 +118,9 @@ static void dlb_patch_dyldinfo(FILE *file,
                 dlb_load_bytes(file, offset + dyldinfo->rebase_off + i, sizeof(uint8_t));
             if ((*bytes & REBASE_OPCODE_MASK) ==
                 REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB) {
-                *bytes -= 1;
-                dlb_write_bytes(file, offset + dyldinfo->rebase_off + i,
-                                sizeof(uint8_t), bytes);
+                // __PAGEZERO is remapped (not removed), so segment indices are
+                // unchanged and the opcodes must NOT be shifted. Decrementing
+                // id shifts a valid __DATA(2) reference to __TEXT(1).
                 free(bytes);
                 break;
             }
@@ -133,9 +133,8 @@ static void dlb_patch_dyldinfo(FILE *file,
                 dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
             switch (*bytes & BIND_OPCODE_MASK) {
                 case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    if ((*bytes & 0xF) == 2) {
-                        *bytes -= 1;
-                    }
+                    // __PAGEZERO remap keeps segment indices intact; do not
+                    // shift __DATA(2) -> __TEXT(1) (non-writable).
                     dlb_write_bytes(file, offset + dyldinfo->bind_off + i,
                                     sizeof(uint8_t), bytes);
                     {
@@ -174,9 +173,7 @@ static void dlb_patch_dyldinfo(FILE *file,
                 dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
             switch (*bytes & BIND_OPCODE_MASK) {
                 case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    if ((*bytes & 0xF) == 2) {
-                        *bytes -= 1;
-                    }
+                    // Segment indices unchanged (__PAGEZERO only remapped).
                     dlb_write_bytes(file, offset + dyldinfo->lazy_bind_off + i,
                                     sizeof(uint8_t), bytes);
                     {
@@ -215,9 +212,7 @@ static void dlb_patch_dyldinfo(FILE *file,
                 dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
             switch (*bytes & BIND_OPCODE_MASK) {
                 case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    if ((*bytes & 0xF) == 2) {
-                        *bytes -= 1;
-                    }
+                    // Segment indices unchanged (__PAGEZERO only remapped).
                     dlb_write_bytes(file, offset + dyldinfo->weak_bind_off + i,
                                     sizeof(uint8_t), bytes);
                     {
