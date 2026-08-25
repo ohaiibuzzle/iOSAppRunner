@@ -65,6 +65,66 @@ final class LauncherSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
+/// Scene delegate installed on guest bundles via the `UIApplicationSceneManifest`
+/// injected at conversion time. Catalyst requires the scene lifecycle, so when a
+/// (typically non-scene) iOS guest calls `UIApplicationMain` it must still wind up
+/// inside a real `UIWindowScene`. This delegate owns that window and hands it to the
+/// guest: it steals the guest's own root view controller (which the guest's app
+/// delegate creates the legacy way) and re-homes it into the scene-backed window.
+@objc(GuestSceneDelegate)
+final class GuestSceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+    private var adoptAttempts = 0
+
+    func scene(_ scene: UIScene,
+               willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        window.makeKeyAndVisible()
+        self.window = window
+
+        // The guest's delegate may not have built its UI yet (it happens in
+        // applicationDidFinishLaunching, which runs right after connect). Adopt
+        // its root view controller, retrying until it appears.
+        adoptGuestRoot(after: 0.05)
+    }
+
+    private func adoptGuestRoot(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            if self.stealGuestRootViewController() {
+                return
+            }
+            // Keep retrying for a bit so a slow guest delegate has time.
+            if self.adoptAttempts < 60 {
+                self.adoptAttempts += 1
+                self.adoptGuestRoot(after: 0.05)
+            }
+        }
+    }
+
+    /// Finds the guest's own window (the one its app delegate built outside a
+    /// scene), takes its root view controller, and moves it onto our scene
+    /// window. Returns false if none is available yet.
+    private func stealGuestRootViewController() -> Bool {
+        guard let sceneWindow = self.window else { return false }
+        // Ignore ourselves to avoid stealing our own (empty) root.
+        let guestCandidates = UIApplication.shared.windows.filter { $0 !== sceneWindow }
+        guard let guest = guestCandidates.first(where: { $0.rootViewController != nil }) else {
+            return false
+        }
+        let root = guest.rootViewController
+        sceneWindow.rootViewController = root
+        if sceneWindow.rootViewController != nil {
+            sceneWindow.makeKeyAndVisible()
+            guest.isHidden = true
+            return true
+        }
+        return false
+    }
+}
+
 // MARK: - Paths
 
 enum LauncherPaths {
@@ -539,9 +599,43 @@ enum AppConverter {
         // 3. xattr -cr equivalent.
         _ = bundleURL.path.withCString { c_stripXattrsRecursive($0) }
 
+        // 3b. Catalyst requires the UIKit scene lifecycle. Old iOS guests call
+        // UIApplicationMain with the host's main bundle redirected to theirs, so
+        // their Info.plist must carry a scene manifest or UIApplicationMain aborts.
+        injectSceneManifest(in: bundleURL)
+
         // 4. Mac Catalyst-only build-version retargeting.
         if ProcessInfo.processInfo.isMacCatalystApp {
             retargetAllMachOImages(in: bundleURL)
+        }
+    }
+
+    /// Rewrites the guest's Info.plist to advertise a scene-based lifecycle,
+    /// wiring every application-scene role to the host's `GuestSceneDelegate`.
+    private static func injectSceneManifest(in bundleURL: URL) {
+        let plistURL = bundleURL.appendingPathComponent("Info.plist")
+        let fm = FileManager.default
+        guard let data = try? Data(contentsOf: plistURL),
+              var plist = (try? PropertyListSerialization.propertyList(from: data,
+                                                                       options: [],
+                                                                       format: nil)) as? [String: Any] else {
+            return
+        }
+
+        var manifest = (plist["UIApplicationSceneManifest"] as? [String: Any]) ?? [:]
+        var configs = (manifest["UISceneConfigurations"] as? [String: Any]) ?? [:]
+        configs["UIWindowSceneSessionRoleApplication"] = [[
+            "UISceneConfigurationName": "Default Configuration",
+            "UISceneDelegateClassName": "GuestSceneDelegate",
+        ]]
+        manifest["UISceneConfigurations"] = configs
+        manifest["UIApplicationSupportsMultipleScenes"] = false
+        plist["UIApplicationSceneManifest"] = manifest
+
+        if let out = try? PropertyListSerialization.data(fromPropertyList: plist,
+                                                         format: .binary,
+                                                         options: 0) {
+            try? out.write(to: plistURL, options: [.atomic])
         }
     }
 
