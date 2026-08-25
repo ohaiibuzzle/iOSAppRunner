@@ -128,19 +128,37 @@ bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** or
     uint32_t* baseAddr = dlsym(RTLD_DEFAULT, functionName);
     assert(baseAddr != 0);
     uint32_t* adrpInstPtr = baseAddr + adrpOffset;
-    if ((*adrpInstPtr & 0x9f000000) != 0x90000000) {
-        adrpOffset += 20;
-        adrpInstPtr = baseAddr + adrpOffset;
+    
+    static long adrpExtraOffset = -1;
+    if(adrpExtraOffset == -1) {
+        // let't hope the function is not longer than 200 instructions
+        uint32_t* end = baseAddr + 200;
+        for(uint32_t* cur = adrpInstPtr;cur < end;++cur) {
+            if ((*cur & 0x9f000000) != 0x90000000) {
+                continue;
+            }
+            if ((*(cur+1) & 0xFFC00000) != 0xF9400000) {
+                continue;
+            }
+            if ((*(cur+2) & 0xFFC00000) != 0xF9400000) {
+                continue;
+            }
+            adrpExtraOffset = cur - adrpInstPtr;
+            break;
+        }
+        assert(adrpExtraOffset != -1);
     }
-    assert ((*adrpInstPtr & 0x9f000000) == 0x90000000);
-    void* gdyldPtr = (void*)aarch64_emulate_adrp_ldr(*adrpInstPtr, *(baseAddr + adrpOffset + 1), (uint64_t)(baseAddr + adrpOffset));
+    
+    adrpInstPtr += adrpExtraOffset;
+
+    void* gdyldPtr = (void*)aarch64_emulate_adrp_ldr(*adrpInstPtr, *(adrpInstPtr + 1), (uint64_t)adrpInstPtr);
     
     assert(gdyldPtr != 0);
     assert(*(void**)gdyldPtr != 0);
     void* vtablePtr = **(void***)gdyldPtr;
     
     void* vtableFunctionPtr = 0;
-    uint32_t* movInstPtr = baseAddr + adrpOffset + 6;
+    uint32_t* movInstPtr = adrpInstPtr + 6;
 
     if((*movInstPtr & 0x7F800000) == 0x52800000) {
         // arm64e, mov imm + add + ldr
@@ -152,7 +170,7 @@ bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** or
         vtableFunctionPtr = vtablePtr + imm9;
     } else {
         // arm64
-        uint32_t* ldrInstPtr2 = baseAddr + adrpOffset + 3;
+        uint32_t* ldrInstPtr2 = adrpInstPtr + 3;
         assert((*ldrInstPtr2 & 0xBFC00000) == 0xB9400000);
         uint32_t size2 = (*ldrInstPtr2 & 0xC0000000) >> 30;
         uint32_t imm12_2 = (*ldrInstPtr2 & 0x3FFC00) >> 10;
@@ -161,12 +179,20 @@ bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** or
 
     
     kern_return_t ret = builtin_vm_protect(mach_task_self(), (mach_vm_address_t)vtableFunctionPtr, sizeof(uintptr_t), false, PROT_READ | PROT_WRITE | VM_PROT_COPY);
-    assert(ret == KERN_SUCCESS);
+    if(ret != KERN_SUCCESS) {
+        assert(os_tpro_is_supported());
+        os_thread_self_restrict_tpro_to_rw();
+    }
     *origFunction = (void*)*(void**)vtableFunctionPtr;
     *(uint64_t*)vtableFunctionPtr = (uint64_t)hookFunction;
     builtin_vm_protect(mach_task_self(), (mach_vm_address_t)vtableFunctionPtr, sizeof(uintptr_t), false, PROT_READ);
+    if(ret != KERN_SUCCESS) {
+        assert(os_tpro_is_supported());
+        os_thread_self_restrict_tpro_to_ro();
+    }
     return true;
 }
+
 
 int hook__NSGetExecutablePath_overwriteExecPath(char*** dyldApiInstancePtr, char* newPath, uint32_t* bufsize) {
     assert(dyldApiInstancePtr != 0);

@@ -24,7 +24,7 @@
 
 /* Begin PBXFileReference section */
 		AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSAppRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB7D90902F5ACEA30061186D /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; name = dylibify; path = /Users/ventithebard/Documents/Code/BaseiOSApp/build/Debug/dylibify; sourceTree = "<absolute>"; };
+		AB6A3B9A303D354E005100AD /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dylibify; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7D90972F5ACECD0061186D /* convert.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = convert.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -114,6 +114,7 @@
 				AB7D909E2F5ACED50061186D /* dylibify */,
 				AB7D90972F5ACECD0061186D /* convert.sh */,
 				AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */,
+				AB6A3B9A303D354E005100AD /* dylibify */,
 			);
 			sourceTree = "<group>";
 		};
@@ -136,7 +137,7 @@
 			packageProductDependencies = (
 			);
 			productName = dylibify;
-			productReference = AB7D90902F5ACEA30061186D /* dylibify */;
+			productReference = AB6A3B9A303D354E005100AD /* dylibify */;
 			productType = "com.apple.product-type.tool";
 		};
 		AB97C84B2F4A326800D24724 /* iOSAppRunner */ = {
