@@ -39,6 +39,12 @@ int macho_is_loadable_image(const char *path);
 /// success, negative on failure.
 int strip_xattrs_recursive(const char *path);
 
+/// Adds an `@c LC_RPATH` load command with the given @c rpath to every slice
+/// of the Mach-O at @c path, unless that exact rpath is already present.
+/// Returns 0 on success and a negative value on failure (e.g. no header
+/// padding to grow into).
+int macho_add_rpath(const char *path, const char *rpath);
+
 #ifdef __cplusplus
 }
 #endif

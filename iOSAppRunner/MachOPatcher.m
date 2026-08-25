@@ -455,3 +455,213 @@ int strip_xattrs_recursive(const char *path) {
     }
     return rc;
 }
+
+// Appends an LC_RPATH load command to a single thin Mach-O slice at
+// slice_offset, unless an identical rpath command is already present.
+// The new command is written at the end of the load-command region, growing
+// into the header padding that precedes the first section (same technique as
+// patch_slice). Returns 0 on success, -1 on failure.
+static int add_rpath_to_slice(int fd, off_t slice_offset, const char *rpath) {
+    uint32_t magic;
+    if (pread(fd, &magic, sizeof(magic), slice_offset) != sizeof(magic)) {
+        return -1;
+    }
+
+    size_t header_size;
+    uint32_t ncmds, sizeofcmds;
+    if (magic == MH_MAGIC_64) {
+        struct mach_header_64 hdr;
+        if (pread(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+        header_size = sizeof(hdr);
+        ncmds = hdr.ncmds;
+        sizeofcmds = hdr.sizeofcmds;
+    } else if (magic == MH_MAGIC) {
+        struct mach_header hdr;
+        if (pread(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+        header_size = sizeof(hdr);
+        ncmds = hdr.ncmds;
+        sizeofcmds = hdr.sizeofcmds;
+    } else {
+        return -1;
+    }
+
+    if (sizeofcmds == 0 || sizeofcmds > (16u * 1024 * 1024)) {
+        return -1;
+    }
+
+    off_t lc_offset = slice_offset + (off_t)header_size;
+    uint8_t *lc = malloc(sizeofcmds);
+    if (!lc) {
+        return -1;
+    }
+    if (pread(fd, lc, sizeofcmds, lc_offset) != (ssize_t)sizeofcmds) {
+        free(lc);
+        return -1;
+    }
+
+    // Walk the commands: find the first section's file offset (bounds how
+    // far we can grow) and check whether the rpath already exists.
+    uint64_t minSectionOffset = UINT64_MAX;
+    bool alreadyPresent = false;
+    uint32_t off = 0;
+    for (uint32_t i = 0; i < ncmds; i++) {
+        if (off + sizeof(struct load_command) > sizeofcmds) {
+            free(lc);
+            return -1;
+        }
+        struct load_command *cmd = (struct load_command *)(lc + off);
+        if (cmd->cmdsize < sizeof(struct load_command) ||
+            off + cmd->cmdsize > sizeofcmds) {
+            free(lc);
+            return -1;
+        }
+        if (cmd->cmd == LC_RPATH && cmd->cmdsize >= sizeof(struct rpath_command)) {
+            struct rpath_command *rp = (struct rpath_command *)(lc + off);
+            if (rp->path.offset < cmd->cmdsize &&
+                strcmp((const char *)lc + off + rp->path.offset, rpath) == 0) {
+                alreadyPresent = true;
+            }
+        } else if (cmd->cmd == LC_SEGMENT_64 &&
+                   cmd->cmdsize >= sizeof(struct segment_command_64)) {
+            struct segment_command_64 *seg = (struct segment_command_64 *)(lc + off);
+            struct section_64 *sects = (struct section_64 *)(lc + off + sizeof(*seg));
+            for (uint32_t s = 0; s < seg->nsects; s++) {
+                if (sects[s].offset != 0 && sects[s].offset < minSectionOffset) {
+                    minSectionOffset = sects[s].offset;
+                }
+            }
+        } else if (cmd->cmd == LC_SEGMENT &&
+                   cmd->cmdsize >= sizeof(struct segment_command)) {
+            struct segment_command *seg = (struct segment_command *)(lc + off);
+            struct section *sects = (struct section *)(lc + off + sizeof(*seg));
+            for (uint32_t s = 0; s < seg->nsects; s++) {
+                if (sects[s].offset != 0 && sects[s].offset < minSectionOffset) {
+                    minSectionOffset = sects[s].offset;
+                }
+            }
+        }
+        off += cmd->cmdsize;
+    }
+    free(lc);
+
+    if (alreadyPresent) {
+        return 0;
+    }
+
+    // Build the new LC_RPATH command.
+    uint32_t pathLen = (uint32_t)strlen(rpath) + 1;
+    uint32_t rpathCmdSize = (uint32_t)(sizeof(struct rpath_command) + pathLen);
+    bool is64 = (magic == MH_MAGIC_64);
+    rpathCmdSize = (rpathCmdSize + (is64 ? 7u : 3u)) & ~(is64 ? 7u : 3u);
+
+    uint64_t newLen = (uint64_t)sizeofcmds + rpathCmdSize;
+    if (minSectionOffset != UINT64_MAX &&
+        (uint64_t)header_size + newLen > minSectionOffset) {
+        NSLog(@"[machopatcher] not enough header padding to add LC_RPATH to "
+              @"slice at offset %lld; left as-is",
+              (long long)slice_offset);
+        return -1;
+    }
+
+    // Write the rpath command into the padding after the existing commands.
+    uint8_t *rp = calloc(1, rpathCmdSize);
+    if (!rp) {
+        return -1;
+    }
+    struct rpath_command *rpc = (struct rpath_command *)rp;
+    rpc->cmd = LC_RPATH;
+    rpc->cmdsize = rpathCmdSize;
+    rpc->path.offset = (uint32_t)sizeof(struct rpath_command);
+    memcpy(rp + sizeof(struct rpath_command), rpath, pathLen);
+
+    off_t writePos = lc_offset + (off_t)sizeofcmds;
+    if (pwrite(fd, rp, rpathCmdSize, writePos) != (ssize_t)rpathCmdSize) {
+        free(rp);
+        return -1;
+    }
+    free(rp);
+
+    // Bump ncmds and sizeofcmds in the header.
+    if (is64) {
+        struct mach_header_64 hdr;
+        if (pread(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+        hdr.ncmds += 1;
+        hdr.sizeofcmds += rpathCmdSize;
+        if (pwrite(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+    } else {
+        struct mach_header hdr;
+        if (pread(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+        hdr.ncmds += 1;
+        hdr.sizeofcmds += rpathCmdSize;
+        if (pwrite(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int macho_add_rpath(const char *path, const char *rpath) {
+    int fd = open(path, O_RDWR);
+    if (fd < 0) {
+        NSLog(@"[machopatcher] open failed: %s (%d)", path, errno);
+        return -1;
+    }
+
+    uint32_t magic = 0;
+    if (pread(fd, &magic, sizeof(magic), 0) != sizeof(magic)) {
+        close(fd);
+        return -1;
+    }
+
+    int rc = 0;
+    if (magic == FAT_CIGAM || magic == FAT_CIGAM_64) {
+        struct fat_header fh;
+        if (pread(fd, &fh, sizeof(fh), 0) != sizeof(fh)) {
+            close(fd);
+            return -1;
+        }
+        uint32_t narch = MP_SWAP32(fh.nfat_arch);
+        bool is64Fat = (magic == FAT_CIGAM_64);
+        for (uint32_t i = 0; i < narch; i++) {
+            uint64_t archOffset;
+            if (is64Fat) {
+                struct fat_arch_64 fa;
+                off_t pos = sizeof(struct fat_header) + (off_t)i * sizeof(fa);
+                if (pread(fd, &fa, sizeof(fa), pos) != sizeof(fa)) {
+                    rc = -1; break;
+                }
+                archOffset = __builtin_bswap64(fa.offset);
+            } else {
+                struct fat_arch fa;
+                off_t pos = sizeof(struct fat_header) + (off_t)i * sizeof(fa);
+                if (pread(fd, &fa, sizeof(fa), pos) != sizeof(fa)) {
+                    rc = -1; break;
+                }
+                archOffset = MP_SWAP32(fa.offset);
+            }
+            if (add_rpath_to_slice(fd, (off_t)archOffset, rpath) != 0) {
+                rc = -1; break;
+            }
+        }
+    } else if (magic == MH_MAGIC || magic == MH_MAGIC_64) {
+        rc = add_rpath_to_slice(fd, 0, rpath);
+    } else {
+        NSLog(@"[machopatcher] not a Mach-O: %s (magic=0x%x)", path, magic);
+        rc = -1;
+    }
+
+    close(fd);
+    return rc;
+}
+
+

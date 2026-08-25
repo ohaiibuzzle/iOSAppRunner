@@ -14,6 +14,8 @@
 #import <stdio.h>
 #import <unistd.h>
 #import "Resolution.h"
+#import "GroupContainer.h"
+#import "WindowHooks.h"
 
 static int runHostLauncher(int argc, char *argv[]) {
     @autoreleasepool {
@@ -199,6 +201,8 @@ int main(int argc, char * argv[]) {
             appMainImageIndex = _dyld_image_count();
             hook_init();
             DisplayHooksInit();
+            GroupContainerHooksInit();
+            GuestWindowHooksInit();
             SecItemGuestHooksInit(hostAppIdentifier,appBundle.bundleIdentifier);
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;

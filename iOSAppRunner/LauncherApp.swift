@@ -31,6 +31,19 @@ private func c_stripXattrsRecursive(_ path: UnsafePointer<CChar>) -> Int32
 @_silgen_name("macho_is_loadable_image")
 private func c_machoIsLoadableImage(_ path: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("macho_add_rpath")
+private func c_machoAddRpath(_ path: UnsafePointer<CChar>,
+                             _ rpath: UnsafePointer<CChar>) -> Int32
+
+@_silgen_name("SetGuestWindowScene")
+private func c_SetGuestWindowScene(_ scene: UnsafeRawPointer)
+
+@_silgen_name("SetGuestPlaceholderWindow")
+private func c_SetGuestPlaceholderWindow(_ window: UnsafeRawPointer)
+
+@_silgen_name("GuestAdoptSceneLessWindows")
+private func c_GuestAdoptSceneLessWindows() -> UnsafeRawPointer?
+
 // MARK: - App / Scene Delegates
 
 @objc(LauncherAppDelegate)
@@ -68,60 +81,50 @@ final class LauncherSceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// Scene delegate installed on guest bundles via the `UIApplicationSceneManifest`
 /// injected at conversion time. Catalyst requires the scene lifecycle, so when a
 /// (typically non-scene) iOS guest calls `UIApplicationMain` it must still wind up
-/// inside a real `UIWindowScene`. This delegate owns that window and hands it to the
-/// guest: it steals the guest's own root view controller (which the guest's app
-/// delegate creates the legacy way) and re-homes it into the scene-backed window.
+/// inside a real `UIWindowScene`.
+///
+/// The guest's own app delegate creates its window the legacy way (an orphan
+/// `UIWindow` with no scene). Our `makeKeyAndVisible` interposition
+/// (`WindowHooks.m`) attaches that window to *this* scene, so whatever the guest
+/// added — root view controller or bare subviews — renders. This delegate just
+/// registers the scene and removes its own placeholder once a guest window shows.
 @objc(GuestSceneDelegate)
 final class GuestSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
-    private var adoptAttempts = 0
 
     func scene(_ scene: UIScene,
                willConnectTo session: UISceneSession,
                options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
-        let window = UIWindow(windowScene: windowScene)
-        window.makeKeyAndVisible()
-        self.window = window
 
-        // The guest's delegate may not have built its UI yet (it happens in
-        // applicationDidFinishLaunching, which runs right after connect). Adopt
-        // its root view controller, retrying until it appears.
-        adoptGuestRoot(after: 0.05)
-    }
+        // Hand the scene to the window hook so guest windows attach to it.
+        c_SetGuestWindowScene(Unmanaged.passUnretained(windowScene).toOpaque())
 
-    private func adoptGuestRoot(after delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            if self.stealGuestRootViewController() {
-                return
-            }
-            // Keep retrying for a bit so a slow guest delegate has time.
-            if self.adoptAttempts < 60 {
-                self.adoptAttempts += 1
-                self.adoptGuestRoot(after: 0.05)
-            }
+        // The guest's own window may have been created *before* this scene
+        // connected (scene-lifecycle race). Adopt it; only fall back to a blank
+        // placeholder if no guest window exists yet.
+        let adoptedRaw = c_GuestAdoptSceneLessWindows()
+        if let adoptedRaw {
+            let guest = Unmanaged<UIWindow>.fromOpaque(adoptedRaw).takeUnretainedValue()
+            guest.makeKeyAndVisible()
+            self.window = guest
+            NSLog("GuestSceneDelegate adopted existing guest window %@", guest)
+            return
         }
-    }
 
-    /// Finds the guest's own window (the one its app delegate built outside a
-    /// scene), takes its root view controller, and moves it onto our scene
-    /// window. Returns false if none is available yet.
-    private func stealGuestRootViewController() -> Bool {
-        guard let sceneWindow = self.window else { return false }
-        // Ignore ourselves to avoid stealing our own (empty) root.
-        let guestCandidates = UIApplication.shared.windows.filter { $0 !== sceneWindow }
-        guard let guest = guestCandidates.first(where: { $0.rootViewController != nil }) else {
-            return false
+        let host = UIWindow(windowScene: windowScene)
+        host.makeKeyAndVisible()
+        self.window = host
+        c_SetGuestPlaceholderWindow(Unmanaged.passUnretained(host).toOpaque())
+        NSLog("GuestSceneDelegate set placeholder %@", host)
+
+        // Diagnostic: dump window state a couple seconds later to see whether
+        // the guest ever produces its own window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            let windows = UIApplication.shared.windows
+            NSLog("[diag] windows(%ld): %@", windows.count,
+                  windows.map { "\($0) scene=\(String(describing: $0.windowScene)) root=\(String(describing: $0.rootViewController)) subs=\($0.subviews.count)" })
         }
-        let root = guest.rootViewController
-        sceneWindow.rootViewController = root
-        if sceneWindow.rootViewController != nil {
-            sceneWindow.makeKeyAndVisible()
-            guest.isHidden = true
-            return true
-        }
-        return false
     }
 }
 
@@ -665,6 +668,23 @@ enum AppConverter {
             let isImage = fileURL.path.withCString { c_machoIsLoadableImage($0) } != 0
             guard isImage else { continue }
             retargetToMacCatalyst(at: fileURL)
+            injectSwiftRpath(at: fileURL)
+        }
+    }
+
+    // Catalyst hosts all the iOS Swift runtime overlays in the dyld cache
+    // under /System/iOSSupport/usr/lib/swift. Guest Swift frameworks link them
+    // via @rpath/libswift*.dylib, but their own rpaths don't reach that
+    // directory, so dyld can't bind them when we dlopen the guest. Add the
+    // iOS-support Swift dir as an LC_RPATH so those references resolve.
+    private static func injectSwiftRpath(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let rpath = "/System/iOSSupport/usr/lib/swift"
+        let rc = url.path.withCString { p in
+            rpath.withCString { c_machoAddRpath(p, $0) }
+        }
+        if rc < 0 {
+            NSLog("[converter] failed to add Swift rpath on %@", url.path as NSString)
         }
     }
 
