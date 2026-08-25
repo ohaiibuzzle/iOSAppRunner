@@ -414,7 +414,8 @@ static int strip_xattrs_on_file(const char *path) {
     while (pos < read) {
         const char *name = names + pos;
         size_t len = strlen(name) + 1;
-        if (removexattr(path, name, XATTR_NOFOLLOW) != 0 && errno != ENOATTR) {
+        if (strcmp(name, "com.apple.macl") != 0 &&
+            removexattr(path, name, XATTR_NOFOLLOW) != 0 && errno != ENOATTR) {
             NSLog(@"[xattr] removexattr(%s, %s) failed: %d", path, name, errno);
             rc = -1;
         }

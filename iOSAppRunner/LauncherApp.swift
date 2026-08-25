@@ -159,6 +159,41 @@ struct InstalledApp: Identifiable, Hashable {
     let iconPath: String?
 }
 
+/// The per-app host hooks. `all` are **runtime-toggleable** — edited after import
+/// from the "Compatibility Settings" sheet, and read at launch by `Loader`
+struct Feature: Identifiable {
+    let id: String
+    let name: String
+    let detail: String
+
+    /// Runtime-toggleable hooks shown in the Compatibility Settings sheet.
+    static let all: [Feature] = [
+        Feature(id: "groupContainer", name: "Group containers",
+                detail: "Redirect security-application-group URLs into the guest home."),
+        Feature(id: "resolution", name: "Spoof display resolution",
+                detail: "Fake UIScreen to 3000×2000 @2x and fix window size."),
+        Feature(id: "keychain", name: "Keychain remap",
+                detail: "Remap keychain access groups to the host's team ID."),
+    ]
+
+    /// Import-time-only toggles, shown as toggles in the Import sheet. Add any
+    /// future convert-time features here.
+    static let importOnly: [Feature] = [
+        Feature(id: "scene", name: "UIScene compatibility fix",
+                detail: "Inject a scene manifest for legacy apps that uses the legacy UIScene lifecycle."),
+    ]
+
+    /// Default enabled-state per feature. `scene` (import-time) is default-OFF;
+    /// runtime hooks default ON. Keep in sync with `writeDefaultRunnerFeatures`
+    /// and `Loader.h`.
+    static let defaultValues: [String: Bool] = [
+        "scene": false,
+        "groupContainer": true,
+        "resolution": true,
+        "keychain": true,
+    ]
+}
+
 @MainActor
 final class LauncherModel: ObservableObject {
     @Published var apps: [InstalledApp] = []
@@ -196,7 +231,7 @@ final class LauncherModel: ObservableObject {
         currentSelection = readSelection()
     }
 
-    func importIPA(_ url: URL) async {
+    func importIPA(_ url: URL, importFeatures: [String: Bool]) async {
         isWorking = true
         status = "Importing \(url.lastPathComponent)…"
         errorMessage = nil
@@ -237,7 +272,7 @@ final class LauncherModel: ObservableObject {
 
             status = "Converting \(destination.lastPathComponent)…"
             try await Task.detached(priority: .userInitiated) {
-                try AppConverter.convert(bundleURL: destination)
+                try AppConverter.convert(bundleURL: destination, importFeatures: importFeatures)
             }.value
 
             status = "Imported \(destination.lastPathComponent)"
@@ -292,6 +327,37 @@ final class LauncherModel: ObservableObject {
     func clearSelection() {
         try? FileManager.default.removeItem(at: LauncherPaths.appToLaunchFile)
         reload()
+    }
+
+    // MARK: - Per-app features (RunnerFeatures.plist)
+
+    func featureEnabled(_ key: String, for app: InstalledApp) -> Bool {
+        guard let plist = readRunnerFeatures(for: app.url) else {
+            return Feature.defaultValues[key] ?? true
+        }
+        return plist[key] as? Bool ?? (Feature.defaultValues[key] ?? true)
+    }
+
+    func setFeature(_ key: String, enabled: Bool, for app: InstalledApp) {
+        var plist = readRunnerFeatures(for: app.url)
+            ?? Dictionary(uniqueKeysWithValues: Feature.defaultValues.map { ($0, $1) })
+        plist[key] = enabled
+        if let out = try? PropertyListSerialization.data(fromPropertyList: plist,
+                                                         format: .xml,
+                                                         options: 0) {
+            try? out.write(to: app.url.appendingPathComponent("RunnerFeatures.plist"))
+        }
+    }
+
+    private func readRunnerFeatures(for appURL: URL) -> [String: Any]? {
+        let url = appURL.appendingPathComponent("RunnerFeatures.plist")
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data,
+                                                                       options: [],
+                                                                       format: nil) as? [String: Any] else {
+            return nil
+        }
+        return plist
     }
 
     // MARK: - Helpers
@@ -375,7 +441,10 @@ enum ImportError: LocalizedError {
 struct LauncherView: View {
     @StateObject private var model = LauncherModel()
     @State private var pendingApp: InstalledApp?
+    @State private var compatApp: InstalledApp?
     @State private var showImporter = false
+    @State private var pendingImport: URL?
+    @State private var showImportSheet = false
 
     var body: some View {
         NavigationView {
@@ -423,7 +492,8 @@ struct LauncherView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("iOS App Loader")
+            .navigationTitle("PlayCover S")
+            .navigationSubtitle("S stands for Signed, or Stupid. Depends.")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -438,7 +508,16 @@ struct LauncherView: View {
                           allowedContentTypes: [UTType.ipa],
                           allowsMultipleSelection: false) { result in
                 guard let url = try? result.get().first else { return }
-                Task { await model.importIPA(url) }
+                // Convert-time feature decisions (e.g. scene manifest injection)
+                // are made here, in the Import sheet, because they're baked into
+                // the converted bundle and can't change without a re-import.
+                pendingImport = url
+                showImportSheet = true
+            }
+            .sheet(isPresented: $showImportSheet, onDismiss: { pendingImport = nil }) {
+                if let url = pendingImport {
+                    ImportOptionsView(url: url, model: model)
+                }
             }
             .confirmationDialog(
                 pendingApp.map { "Launch \($0.displayName)?" } ?? "",
@@ -450,6 +529,10 @@ struct LauncherView: View {
             ) {
                 if let app = pendingApp {
                     Button("Launch") { model.launch(app) }
+                    Button("Compatibility Settings…") {
+                        compatApp = app
+                        pendingApp = nil
+                    }
                     Button("Delete", role: .destructive) {
                         model.delete(app)
                         pendingApp = nil
@@ -458,6 +541,9 @@ struct LauncherView: View {
                 }
             } message: {
                 Text("The app opens in a new window. The launcher stays open.")
+            }
+            .sheet(item: $compatApp) { app in
+                CompatSettingsView(app: app, model: model)
             }
             .alert("Error",
                    isPresented: Binding(
@@ -525,6 +611,101 @@ private struct AppRow: View {
     }
 }
 
+/// Import confirmation / options sheet, shown after picking an IPA. Lists the
+/// convert-time-only feature toggles (e.g. `scene`) as switches, so decisions
+/// baked into the converted bundle are made here rather than after the fact.
+private struct ImportOptionsView: View {
+    let url: URL
+    @ObservedObject var model: LauncherModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var enabled: [String: Bool] = [:]
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    ForEach(Feature.importOnly) { feature in
+                        Toggle(isOn: Binding(
+                            get: { enabled[feature.id] ?? (Feature.defaultValues[feature.id] ?? false) },
+                            set: { enabled[feature.id] = $0 }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feature.name)
+                                Text(feature.detail)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Import app")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        Task {
+                            await model.importIPA(url, importFeatures: enabled)
+                        }
+                        dismiss()
+                    }
+                    .disabled(model.isWorking)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+/// Per-app compatibility toggle sheet. Edits the guest's `RunnerFeatures.plist`;
+/// `main.m`'s `Loader` consults it at launch to decide which host hooks run for
+/// this specific guest (so a fix can be scoped to one app without affecting others).
+private struct CompatSettingsView: View {
+    let app: InstalledApp
+    @ObservedObject var model: LauncherModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    ForEach(Feature.all) { feature in
+                        Toggle(isOn: Binding(
+                            get: { model.featureEnabled(feature.id, for: app) },
+                            set: { model.setFeature(feature.id, enabled: $0, for: app) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feature.name)
+                                Text(feature.detail)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Runtime hooks can be used to mitigate issues with the guest app.")
+                }
+            }
+            .navigationTitle("Compatibility — \(app.displayName)")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        for feature in Feature.all {
+                            model.setFeature(feature.id, enabled: Feature.defaultValues[feature.id] ?? true, for: app)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
 private extension UTType {
     static let ipa: UTType = {
         if let type = UTType(filenameExtension: "ipa") { return type }
@@ -562,7 +743,7 @@ enum AppConverter {
     /// dyld load unsigned binaries via anonymous RWX mappings (the
     /// `RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY` entitlement
     /// permits this).
-    static func convert(bundleURL: URL) throws {
+    static func convert(bundleURL: URL, importFeatures: [String: Bool]) throws {
         let fm = FileManager.default
 
         // 1. Find the main executable via Info.plist.
@@ -602,9 +783,17 @@ enum AppConverter {
         // 3. xattr -cr equivalent.
         _ = bundleURL.path.withCString { c_stripXattrsRecursive($0) }
 
+        // 3a. Write the per-app feature manifest. `importFeatures` holds the
+        // convert-time decisions chosen in the Import sheet (e.g. `scene`, default
+        // OFF); the runtime hooks default ON and stay toggleable. The launcher's
+        // "Compatibility Settings" sheet edits the runtime keys; main.m gates each
+        // hook init on them.
+        writeDefaultRunnerFeatures(in: bundleURL, importFeatures: importFeatures)
+
         // 3b. Catalyst requires the UIKit scene lifecycle. Old iOS guests call
         // UIApplicationMain with the host's main bundle redirected to theirs, so
         // their Info.plist must carry a scene manifest or UIApplicationMain aborts.
+        // Scene-native guests that already ship a manifest keep their own delegate.
         injectSceneManifest(in: bundleURL)
 
         // 4. Mac Catalyst-only build-version retargeting.
@@ -613,11 +802,62 @@ enum AppConverter {
         }
     }
 
-    /// Rewrites the guest's Info.plist to advertise a scene-based lifecycle,
-    /// wiring every application-scene role to the host's `GuestSceneDelegate`.
+    /// Writes a default `RunnerFeatures.plist` (every hook enabled) so a
+    /// freshly-imported guest behaves like a legacy host install. The launcher
+    /// edits it per-app; `main.m` (via `Loader`) gates each hook init on it.
+    ///
+    /// An existing manifest is **preserved** (defaults fill in missing keys
+    /// only), so a user's per-app toggles survive a re-import / re-convert.
+    private static func writeDefaultRunnerFeatures(in bundleURL: URL, importFeatures: [String: Bool]) {
+        let featuresURL = bundleURL.appendingPathComponent("RunnerFeatures.plist")
+        var dict: [String: Any] = [:]
+        if let data = try? Data(contentsOf: featuresURL),
+           let existing = try? PropertyListSerialization.propertyList(from: data,
+                                                                      options: [],
+                                                                      format: nil) as? [String: Any] {
+            dict = existing
+        }
+        // Import-time features come from the Import sheet; they are convert-time
+        // decisions, not runtime toggles.
+        for (key, value) in importFeatures {
+            dict[key] = value
+        }
+        for (key, value) in Feature.defaultValues where dict[key] == nil {
+            dict[key] = value
+        }
+        if let out = try? PropertyListSerialization.data(fromPropertyList: dict,
+                                                         format: .xml,
+                                                         options: 0) {
+            try? out.write(to: featuresURL)
+        }
+    }
+
+    /// Rewrites the guest's Info.plist so UIKit can connect a scene under
+    /// Catalyst.
+    ///
+    /// The old implementation *unconditionally* overwrote
+    /// `UIWindowSceneSessionRoleApplication` with the host's `GuestSceneDelegate`,
+    /// which clobbers a scene-native guest's own SceneDelegate (e.g.
+    /// Aidoku's `Aidoku.SceneDelegate` → `TabBarController` window), leaving it
+    /// blank. We now preserve a guest's existing application-role scene config
+    /// and only fall back to `GuestSceneDelegate` when the guest ships none.
+    ///
+    /// Honours the per-app `scene` feature (RunnerFeatures.plist): when a guest
+    /// has `scene` disabled, the Info.plist is left byte-for-byte untouched here
+    /// (no manifest injected, no `UIApplicationSupportsMultipleScenes` forced),
+    /// so the guest runs with its own scene configuration or none at all.
     private static func injectSceneManifest(in bundleURL: URL) {
+        let featuresURL = bundleURL.appendingPathComponent("RunnerFeatures.plist")
+        if let featureData = try? Data(contentsOf: featuresURL),
+           let featurePlist = try? PropertyListSerialization.propertyList(from: featureData,
+                                                                          options: [],
+                                                                          format: nil) as? [String: Any],
+           featurePlist["scene"] as? Bool == false {
+            NSLog("[converter] scene disabled for %@ — leaving scene manifest untouched", bundleURL.lastPathComponent)
+            return
+        }
+
         let plistURL = bundleURL.appendingPathComponent("Info.plist")
-        let fm = FileManager.default
         guard let data = try? Data(contentsOf: plistURL),
               var plist = (try? PropertyListSerialization.propertyList(from: data,
                                                                        options: [],
@@ -627,10 +867,17 @@ enum AppConverter {
 
         var manifest = (plist["UIApplicationSceneManifest"] as? [String: Any]) ?? [:]
         var configs = (manifest["UISceneConfigurations"] as? [String: Any]) ?? [:]
-        configs["UIWindowSceneSessionRoleApplication"] = [[
-            "UISceneConfigurationName": "Default Configuration",
-            "UISceneDelegateClassName": "GuestSceneDelegate",
-        ]]
+        let roleConfigs = (configs["UIWindowSceneSessionRoleApplication"] as? [[String: Any]]) ?? []
+        if roleConfigs.isEmpty {
+            // Legacy guest with no scene lifecycle shipped its own delegate:
+            // point the application role at the host's GuestSceneDelegate so a
+            // scene actually connects (Catalyst aborts otherwise).
+            configs["UIWindowSceneSessionRoleApplication"] = [[
+                "UISceneConfigurationName": "Default Configuration",
+                "UISceneDelegateClassName": "GuestSceneDelegate",
+            ]]
+        }
+        // else: scene-native guest already wires its own delegate — preserve it.
         manifest["UISceneConfigurations"] = configs
         manifest["UIApplicationSupportsMultipleScenes"] = false
         plist["UIApplicationSceneManifest"] = manifest

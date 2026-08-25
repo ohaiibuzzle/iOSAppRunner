@@ -16,6 +16,7 @@
 #import "Resolution.h"
 #import "GroupContainer.h"
 #import "WindowHooks.h"
+#import "Loader.h"
 
 static int runHostLauncher(int argc, char *argv[]) {
     @autoreleasepool {
@@ -199,11 +200,19 @@ int main(int argc, char * argv[]) {
         if (executablePath) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
-            hook_init();
-            DisplayHooksInit();
-            GroupContainerHooksInit();
-            GuestWindowHooksInit();
-            SecItemGuestHooksInit(hostAppIdentifier,appBundle.bundleIdentifier);
+            hook_init(); // dyld-validation bypass is always needed to load the guest
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureScene)) {
+                GuestWindowHooksInit();
+            }
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureResolution)) {
+                DisplayHooksInit();
+            }
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureGroupContainer)) {
+                GroupContainerHooksInit();
+            }
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureKeychain)) {
+                SecItemGuestHooksInit(hostAppIdentifier, appBundle.bundleIdentifier);
+            }
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;
             if (handle) {
