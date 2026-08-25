@@ -27,6 +27,14 @@ int macho_set_maccatalyst_build_version(const char *path,
                                         uint32_t minosX, uint32_t minosY,
                                         uint32_t sdkX, uint32_t sdkY);
 
+/// Returns 1 if the file at @c path is a Mach-O image that dyld loads and
+/// whose platform must match the host — i.e. its (first) slice is an
+/// @c MH_DYLIB (frameworks, .dylibs, dylibified executables) or an
+/// @c MH_BUNDLE (loadable plug-in bundles). Returns 0 for anything else,
+/// including non-Mach-O files. Detection is by header inspection, not by
+/// file extension or bundle layout.
+int macho_is_loadable_image(const char *path);
+
 /// Recursively strips extended attributes from @c path. Returns 0 on
 /// success, negative on failure.
 int strip_xattrs_recursive(const char *path);

@@ -27,6 +27,9 @@ private func c_setMacCatalystBuildVersion(_ path: UnsafePointer<CChar>,
 @_silgen_name("strip_xattrs_recursive")
 private func c_stripXattrsRecursive(_ path: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("macho_is_loadable_image")
+private func c_machoIsLoadableImage(_ path: UnsafePointer<CChar>) -> Int32
+
 // MARK: - App / Scene Delegates
 
 @objc(LauncherAppDelegate)
@@ -513,25 +516,36 @@ enum AppConverter {
 
         // 4. Mac Catalyst-only build-version retargeting.
         if ProcessInfo.processInfo.isMacCatalystApp {
-            retargetToMacCatalyst(at: execURL)
+            retargetAllMachOImages(in: bundleURL)
+        }
+    }
 
-            let frameworksDir = bundleURL.appendingPathComponent("Frameworks", isDirectory: true)
-            if let contents = try? fm.contentsOfDirectory(at: frameworksDir,
-                                                          includingPropertiesForKeys: nil) {
-                for entry in contents {
-                    switch entry.pathExtension.lowercased() {
-                    case "framework":
-                        let inner = entry.appendingPathComponent(
-                            entry.deletingPathExtension().lastPathComponent
-                        )
-                        retargetToMacCatalyst(at: inner)
-                    case "dylib":
-                        retargetToMacCatalyst(at: entry)
-                    default:
-                        break
-                    }
-                }
+    /// Recursively walks the whole app bundle and retargets every Mach-O image
+    /// (frameworks, .dylibs, loadable bundles, and the dylibified main
+    /// executable) to Mac Catalyst.
+    ///
+    /// Images are identified by inspecting their Mach-O header rather than by
+    /// trusting the bundle layout or file extensions, so binaries dyld would
+    /// otherwise reject are caught wherever they live — Frameworks/,
+    /// PlugIns/*.appex, nested frameworks, loadable .bundles, and
+    /// extension-less helpers alike.
+    private static func retargetAllMachOImages(in bundleURL: URL) {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: bundleURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for case let fileURL as URL in enumerator {
+            guard (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {
+                continue
             }
+            let isImage = fileURL.path.withCString { c_machoIsLoadableImage($0) } != 0
+            guard isImage else { continue }
+            retargetToMacCatalyst(at: fileURL)
         }
     }
 
