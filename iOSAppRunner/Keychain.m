@@ -11,8 +11,13 @@
 #import <CommonCrypto/CommonDigest.h>
 #import "../litehook/src/litehook.h"
 
+#if TARGET_OS_MACCATALYST
 SecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
 CFTypeRef SecTaskCopyValueForEntitlement(SecTaskRef task, CFStringRef entitlement, CFErrorRef *error);
+#else
+SecTrustRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
+CFTypeRef SecTaskCopyValueForEntitlement(SecTrustRef task, CFStringRef entitlement, CFErrorRef *error);
+#endif
 extern void* (*msHookFunction)(void *symbol, void *hook, void **old);
 OSStatus (*orig_SecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result) = SecItemAdd;
 OSStatus (*orig_SecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result) = SecItemCopyMatching;

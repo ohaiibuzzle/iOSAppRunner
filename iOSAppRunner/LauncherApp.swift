@@ -493,7 +493,6 @@ struct LauncherView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("PlayCover S")
-            .navigationSubtitle("S stands for Signed, or Stupid. Depends.")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
