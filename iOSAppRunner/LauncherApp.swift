@@ -146,6 +146,93 @@ enum LauncherPaths {
     static var pendingLaunchDirectory: URL {
         home.appendingPathComponent("pending_launch", isDirectory: true)
     }
+    /// Written by the launcher (see `writeHostDisplayMetricsFile`) right
+    /// before spawning a guest; `Resolution.m` reads it back to size the
+    /// guest's fake `UIScreen` to the Mac's real display.
+    static var displayResolutionFile: URL {
+        home.appendingPathComponent("display_resolution.plist")
+    }
+}
+
+// MARK: - Host display resolution hand-off
+//
+// Mac Catalyst doesn't expose AppKit headers, but the process is a real
+// AppKit app under the hood, so NSWindow/NSScreen are reachable via the
+// Objective-C runtime (the same bridge PlayCover uses). We measure from the
+// launcher's own live window — already fully laid out by the system, so far
+// more reliable than trying to bridge AppKit from inside a freshly-hooked
+// guest process — and persist the result to a file the guest reads at
+// launch, the same hand-off used for queuing which app to launch.
+
+private extension UIWindow {
+    /// The real AppKit `NSWindow` backing this Catalyst `UIWindow`.
+    var hostNSWindow: NSObject? {
+        guard let nsWindows = NSClassFromString("NSApplication")?
+            .value(forKeyPath: "sharedApplication.windows") as? [AnyObject] else { return nil }
+        for nsWindow in nsWindows {
+            let uiWindows = nsWindow.value(forKeyPath: "uiWindows") as? [UIWindow] ?? []
+            if uiWindows.contains(self) {
+                return nsWindow as? NSObject
+            }
+        }
+        return nil
+    }
+}
+
+private struct HostDisplayMetrics: Codable {
+    let width: Double   // points, content area only (title bar excluded) — for UIScreen.bounds
+    let height: Double
+    let scale: Double
+    // AppKit screen-space outer window frame (title bar + content), for
+    // requestGeometryUpdateWithPreferences: — sizeRestrictions alone only
+    // *bounds* a window, it doesn't move/resize one Mac Catalyst already
+    // placed via its own frame restoration (e.g. the launcher's last frame).
+    let frameX: Double
+    let frameY: Double
+    let frameWidth: Double
+    let frameHeight: Double
+}
+
+private func measureHostDisplayMetrics() -> HostDisplayMetrics? {
+    guard
+        let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first,
+        let nsWindow = window.hostNSWindow,
+        let screen = nsWindow.value(forKey: "screen") as? NSObject,
+        let visibleFrameValue = screen.value(forKey: "visibleFrame") as? NSValue,
+        let scaleNumber = screen.value(forKey: "backingScaleFactor") as? NSNumber
+    else {
+        return nil
+    }
+
+    // visibleFrame excludes the menu bar and Dock — the actual space a
+    // maximized window can occupy, unlike the screen's raw full frame.
+    var visibleFrame = CGRect.zero
+    visibleFrameValue.getValue(&visibleFrame)
+
+    // Mac Catalyst windows use a full-size content view internally — the
+    // title bar floats over the content instead of reserving its own space,
+    // so `NSWindow.contentView.frame` is identical to `NSWindow.frame` and
+    // can't be diffed to find the title bar height. UIKit surfaces it as a
+    // safe area inset instead, which is what we actually want here anyway.
+    let titleBarHeight = window.safeAreaInsets.top
+    let contentHeight = visibleFrame.height - titleBarHeight
+    return HostDisplayMetrics(
+        width: visibleFrame.width,
+        height: contentHeight,
+        scale: scaleNumber.doubleValue,
+        frameX: visibleFrame.origin.x,
+        frameY: visibleFrame.origin.y,
+        frameWidth: visibleFrame.width,
+        frameHeight: visibleFrame.height
+    )
+}
+
+private func writeHostDisplayMetricsFile() {
+    guard let metrics = measureHostDisplayMetrics(),
+          let data = try? PropertyListEncoder().encode(metrics) else {
+        return
+    }
+    try? data.write(to: LauncherPaths.displayResolutionFile)
 }
 
 // MARK: - Model
@@ -171,7 +258,7 @@ struct Feature: Identifiable {
         Feature(id: "groupContainer", name: "Group containers",
                 detail: "Redirect security-application-group URLs into the guest home."),
         Feature(id: "resolution", name: "Spoof display resolution",
-                detail: "Fake UIScreen to 3000×2000 @2x and fix window size."),
+                detail: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing)."),
         Feature(id: "keychain", name: "Keychain remap",
                 detail: "Remap keychain access groups to the host's team ID."),
     ]
@@ -301,6 +388,7 @@ final class LauncherModel: ObservableObject {
     /// `open` (LaunchServices strips them), so `main.m` atomically claims the
     /// queued request before any UIKit/CFBundle state is locked in.
     func launch(_ app: InstalledApp) {
+        writeHostDisplayMetricsFile()
         do {
             let dir = LauncherPaths.pendingLaunchDirectory
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -492,7 +580,7 @@ struct LauncherView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("PlayCover S")
+            .navigationTitle("iOSAppRunner")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -538,8 +626,6 @@ struct LauncherView: View {
                     }
                     Button("Cancel", role: .cancel) { pendingApp = nil }
                 }
-            } message: {
-                Text("The app opens in a new window. The launcher stays open.")
             }
             .sheet(item: $compatApp) { app in
                 CompatSettingsView(app: app, model: model)

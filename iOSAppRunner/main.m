@@ -207,7 +207,7 @@ int main(int argc, char * argv[]) {
                 GuestWindowHooksInit();
             }
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureResolution)) {
-                DisplayHooksInit();
+                DisplayHooksInit(homeDir);
             }
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureGroupContainer)) {
                 GroupContainerHooksInit();
