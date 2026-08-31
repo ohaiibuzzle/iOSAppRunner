@@ -202,13 +202,17 @@ int main(int argc, char * argv[]) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
             hook_init(); // dyld-validation bypass is always needed to load the guest
-            SceneLifecycleHooksInit(); // Catalyst: don't fatally terminate guests with no scene manifest
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureSceneLifecycleHooks)) {
+                SceneLifecycleHooksInit(); // Catalyst: don't fatally terminate guests with no scene manifest
+            }
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureScene)) {
                 GuestWindowHooksInit();
             }
+#if TARGET_OS_MACCATALYST
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureResolution)) {
                 DisplayHooksInit(homeDir);
             }
+#endif
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureGroupContainer)) {
                 GroupContainerHooksInit();
             }

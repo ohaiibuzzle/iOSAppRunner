@@ -5,10 +5,11 @@
 
 #import "Loader.h"
 
-NSString *const LoaderFeatureScene           = @"scene";
-NSString *const LoaderFeatureGroupContainer  = @"groupContainer";
-NSString *const LoaderFeatureResolution      = @"resolution";
-NSString *const LoaderFeatureKeychain        = @"keychain";
+NSString *const LoaderFeatureScene                = @"scene";
+NSString *const LoaderFeatureGroupContainer       = @"groupContainer";
+NSString *const LoaderFeatureResolution           = @"resolution";
+NSString *const LoaderFeatureKeychain             = @"keychain";
+NSString *const LoaderFeatureSceneLifecycleHooks  = @"sceneLifecycleHooks";
 
 static NSDictionary *FeaturesForBundle(NSBundle *bundle) {
     static NSString *gBundlePath;

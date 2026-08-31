@@ -261,6 +261,8 @@ struct Feature: Identifiable {
                 detail: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing)."),
         Feature(id: "keychain", name: "Keychain remap",
                 detail: "Remap keychain access groups to the host's team ID."),
+        Feature(id: "sceneLifecycleHooks", name: "Scene-lifecycle abort bypass",
+                detail: "Prevent Catalyst from fatally terminating guests that have no scene manifest."),
     ]
 
     /// Import-time-only toggles, shown as toggles in the Import sheet. Add any
@@ -278,6 +280,7 @@ struct Feature: Identifiable {
         "groupContainer": true,
         "resolution": true,
         "keychain": true,
+        "sceneLifecycleHooks": true,
     ]
 }
 
@@ -398,7 +401,7 @@ final class LauncherModel: ObservableObject {
             errorMessage = "Failed to queue launch: \(error.localizedDescription)"
             return
         }
-
+#if targetEnvironment(macCatalyst)
         let args = ["/usr/bin/open", "-n", Bundle.main.bundlePath]
         var pid: pid_t = 0
         var argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
@@ -410,6 +413,9 @@ final class LauncherModel: ObservableObject {
         } else {
             errorMessage = "Failed to launch \(app.displayName) (open rc=\(rc))."
         }
+#else
+        exit(0)
+#endif
     }
 
     func clearSelection() {
@@ -615,7 +621,11 @@ struct LauncherView: View {
                 titleVisibility: .visible
             ) {
                 if let app = pendingApp {
+#if targetEnvironment(macCatalyst)
                     Button("Launch") { model.launch(app) }
+#else
+                    Button("Exit and Queue Launch") { model.launch(app) }
+#endif
                     Button("Compatibility Settings…") {
                         compatApp = app
                         pendingApp = nil
