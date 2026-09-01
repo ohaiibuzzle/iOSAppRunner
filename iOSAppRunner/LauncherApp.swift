@@ -321,55 +321,87 @@ final class LauncherModel: ObservableObject {
         currentSelection = readSelection()
     }
 
-    func importIPA(_ url: URL, importFeatures: [String: Bool]) async {
+    /// Imports a batch of IPAs sequentially. A failed IPA doesn't abort the
+    /// batch; failures are collected and reported in one aggregated error.
+    func importIPAs(_ urls: [URL], importFeatures: [String: Bool]) async {
         isWorking = true
-        status = "Importing \(url.lastPathComponent)…"
         errorMessage = nil
         defer {
             isWorking = false
             reload()
         }
 
+        var failures: [String] = []
+        for (index, url) in urls.enumerated() {
+            status = "Importing \(index + 1) of \(urls.count): \(url.lastPathComponent)…"
+            do {
+                try await importOne(url, importFeatures: importFeatures)
+            } catch {
+                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+
+        if failures.isEmpty {
+            status = urls.count == 1 ? "Imported \(urls[0].lastPathComponent)"
+                                     : "Imported \(urls.count) apps"
+        } else {
+            status = "Imported \(urls.count - failures.count) of \(urls.count)"
+            errorMessage = "Some imports failed:\n" + failures.joined(separator: "\n")
+        }
+    }
+
+    private func importOne(_ url: URL, importFeatures: [String: Bool]) async throws {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
         let fm = FileManager.default
         let scratch = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
-        do {
-            ensureAppsDirectory()
-            try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            defer { try? fm.removeItem(at: scratch) }
+        defer { try? fm.removeItem(at: scratch) }
 
-            try await Task.detached(priority: .userInitiated) {
-                try ZipExtractor.extract(zipURL: url, to: scratch)
-            }.value
+        ensureAppsDirectory()
+        try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
 
-            let payload = scratch.appendingPathComponent("Payload", isDirectory: true)
-            guard fm.fileExists(atPath: payload.path) else {
-                throw ImportError.missingPayload
-            }
-            let payloadContents = try fm.contentsOfDirectory(at: payload, includingPropertiesForKeys: nil)
-            guard let bundle = payloadContents.first(where: { $0.pathExtension.lowercased() == "app" }) else {
-                throw ImportError.missingAppBundle
-            }
+        try await Task.detached(priority: .userInitiated) {
+            try ZipExtractor.extract(zipURL: url, to: scratch)
+        }.value
 
-            let destination = LauncherPaths.appsDirectory.appendingPathComponent(bundle.lastPathComponent)
-            if fm.fileExists(atPath: destination.path) {
-                try fm.removeItem(at: destination)
-            }
-            try fm.moveItem(at: bundle, to: destination)
-
-            status = "Converting \(destination.lastPathComponent)…"
-            try await Task.detached(priority: .userInitiated) {
-                try AppConverter.convert(bundleURL: destination, importFeatures: importFeatures)
-            }.value
-
-            status = "Imported \(destination.lastPathComponent)"
-        } catch {
-            errorMessage = "Import failed: \(error.localizedDescription)"
-            status = ""
+        let payload = scratch.appendingPathComponent("Payload", isDirectory: true)
+        guard fm.fileExists(atPath: payload.path) else {
+            throw ImportError.missingPayload
         }
+        let payloadContents = try fm.contentsOfDirectory(at: payload, includingPropertiesForKeys: nil)
+        guard let bundle = payloadContents.first(where: { $0.pathExtension.lowercased() == "app" }) else {
+            throw ImportError.missingAppBundle
+        }
+
+        // Install under the guest's bundle ID (e.g. com.foo.Bar.app) so two
+        // IPAs whose .app folders share a name can't collide on disk. Fall
+        // back to the original folder name if the ID is missing/unusable.
+        let bundleID = readInfoPlist(at: bundle)?["CFBundleIdentifier"] as? String
+        let installName = Self.sanitizedInstallName(bundleID) ?? bundle.lastPathComponent
+        let destination = LauncherPaths.appsDirectory.appendingPathComponent(installName)
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try fm.moveItem(at: bundle, to: destination)
+
+        status = "Converting \(destination.lastPathComponent)…"
+        try await Task.detached(priority: .userInitiated) {
+            try AppConverter.convert(bundleURL: destination, importFeatures: importFeatures)
+        }.value
+
+        status = "Imported \(destination.lastPathComponent)"
+    }
+
+    /// Restricts an install folder name to characters safe for a plain
+    /// `apps/<name>` lookup in main.m (which does no escaping).
+    private static func sanitizedInstallName(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        let cleaned = raw.unicodeScalars.filter { allowed.contains($0) }
+        let name = String(String.UnicodeScalarView(cleaned))
+        return name.isEmpty ? nil : "\(name).app"
     }
 
     func delete(_ app: InstalledApp) {
@@ -537,7 +569,7 @@ struct LauncherView: View {
     @State private var pendingApp: InstalledApp?
     @State private var compatApp: InstalledApp?
     @State private var showImporter = false
-    @State private var pendingImport: URL?
+    @State private var pendingImport: [URL]?
     @State private var showImportSheet = false
 
     var body: some View {
@@ -599,17 +631,18 @@ struct LauncherView: View {
             }
             .fileImporter(isPresented: $showImporter,
                           allowedContentTypes: [UTType.ipa],
-                          allowsMultipleSelection: false) { result in
-                guard let url = try? result.get().first else { return }
+                          allowsMultipleSelection: true) { result in
+                let urls = (try? result.get()) ?? []
+                guard !urls.isEmpty else { return }
                 // Convert-time feature decisions (e.g. scene manifest injection)
                 // are made here, in the Import sheet, because they're baked into
                 // the converted bundle and can't change without a re-import.
-                pendingImport = url
+                pendingImport = urls
                 showImportSheet = true
             }
             .sheet(isPresented: $showImportSheet, onDismiss: { pendingImport = nil }) {
-                if let url = pendingImport {
-                    ImportOptionsView(url: url, model: model)
+                if let urls = pendingImport {
+                    ImportOptionsView(urls: urls, model: model)
                 }
             }
             .confirmationDialog(
@@ -706,11 +739,14 @@ private struct AppRow: View {
     }
 }
 
-/// Import confirmation / options sheet, shown after picking an IPA. Lists the
-/// convert-time-only feature toggles (e.g. `scene`) as switches, so decisions
-/// baked into the converted bundle are made here rather than after the fact.
+/// Import confirmation / options sheet, shown after picking one or more IPAs.
+/// Lists the files in the batch and the convert-time-only feature toggles
+/// (e.g. `scene`) as switches, so decisions baked into the converted bundle
+/// are made here rather than after the fact. Convert-time toggles are only
+/// offered for single imports — for a batch they're troubleshooting knobs,
+/// and the batch runs with the defaults instead.
 private struct ImportOptionsView: View {
-    let url: URL
+    let urls: [URL]
     @ObservedObject var model: LauncherModel
     @Environment(\.dismiss) private var dismiss
     @State private var enabled: [String: Bool] = [:]
@@ -718,28 +754,37 @@ private struct ImportOptionsView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section {
-                    ForEach(Feature.importOnly) { feature in
-                        Toggle(isOn: Binding(
-                            get: { enabled[feature.id] ?? (Feature.defaultValues[feature.id] ?? false) },
-                            set: { enabled[feature.id] = $0 }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(feature.name)
-                                Text(feature.detail)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                Section(urls.count == 1 ? "Selected app" : "Selected apps (\(urls.count))") {
+                    ForEach(urls, id: \.self) { url in
+                        Text(url.lastPathComponent)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                if urls.count == 1 {
+                    Section {
+                        ForEach(Feature.importOnly) { feature in
+                            Toggle(isOn: Binding(
+                                get: { enabled[feature.id] ?? (Feature.defaultValues[feature.id] ?? false) },
+                                set: { enabled[feature.id] = $0 }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(feature.name)
+                                    Text(feature.detail)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Import app")
+            .navigationTitle(urls.count == 1 ? "Import app" : "Import \(urls.count) apps")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Import") {
                         Task {
-                            await model.importIPA(url, importFeatures: enabled)
+                            await model.importIPAs(urls, importFeatures: enabled)
                         }
                         dismiss()
                     }
@@ -874,9 +919,6 @@ enum AppConverter {
         } catch {
             throw ConversionError.replaceExecutableFailed(error)
         }
-
-        // 3. xattr -cr equivalent.
-        _ = bundleURL.path.withCString { c_stripXattrsRecursive($0) }
 
         // 3a. Write the per-app feature manifest. `importFeatures` holds the
         // convert-time decisions chosen in the Import sheet (e.g. `scene`, default
