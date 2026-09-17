@@ -17,7 +17,6 @@
 #import "GroupContainer.h"
 #import "WindowHooks.h"
 #import "Loader.h"
-#import "SceneLifecycleHook.h"
 
 static int runHostLauncher(int argc, char *argv[]) {
     @autoreleasepool {
@@ -202,9 +201,11 @@ int main(int argc, char * argv[]) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
             hook_init(); // dyld-validation bypass is always needed to load the guest
-            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureSceneLifecycleHooks)) {
-                SceneLifecycleHooksInit(); // Catalyst: don't fatally terminate guests with no scene manifest
-            }
+            // Guests with no UIApplicationSceneManifest no longer need any
+            // patching: the runner claims SDK 17.0 via -platform_version
+            // (OTHER_LDFLAGS), which makes UIKit's
+            // _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption
+            // take the tolerant path for every guest.
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureScene)) {
                 GuestWindowHooksInit();
             }

@@ -11,7 +11,6 @@ FOUNDATION_EXPORT NSString *const LoaderFeatureScene;
 FOUNDATION_EXPORT NSString *const LoaderFeatureGroupContainer;
 FOUNDATION_EXPORT NSString *const LoaderFeatureResolution;
 FOUNDATION_EXPORT NSString *const LoaderFeatureKeychain;
-FOUNDATION_EXPORT NSString *const LoaderFeatureSceneLifecycleHooks;
 
 /// Returns whether `feature` is enabled for the given guest bundle. Missing
 /// key (or a missing manifest) evaluates to YES, so a guest with no manifest

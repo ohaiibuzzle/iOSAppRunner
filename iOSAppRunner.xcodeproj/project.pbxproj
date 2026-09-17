@@ -347,6 +347,16 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-Xlinker",
+					"-platform_version",
+					"-Xlinker",
+					"mac-catalyst",
+					"-Xlinker",
+					15.6,
+					"-Xlinker",
+					26.0,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -461,6 +471,16 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-Xlinker",
+					"-platform_version",
+					"-Xlinker",
+					"mac-catalyst",
+					"-Xlinker",
+					15.6,
+					"-Xlinker",
+					26.0,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

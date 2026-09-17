@@ -261,8 +261,6 @@ struct Feature: Identifiable {
                 detail: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing)."),
         Feature(id: "keychain", name: "Keychain remap",
                 detail: "Remap keychain access groups to the host's team ID."),
-        Feature(id: "sceneLifecycleHooks", name: "Scene-lifecycle abort bypass",
-                detail: "Prevent Catalyst from fatally terminating guests that have no scene manifest."),
     ]
 
     /// Import-time-only toggles, shown as toggles in the Import sheet. Add any
@@ -280,7 +278,6 @@ struct Feature: Identifiable {
         "groupContainer": true,
         "resolution": true,
         "keychain": true,
-        "sceneLifecycleHooks": true,
     ]
 }
 
