@@ -9,13 +9,20 @@
 //  run fine as classic non-scene apps on real iOS with the exact same
 //  missing manifest.
 //
-//  The function is a short-circuit chain of early-return gates. The one
-//  that actually decides fatal-vs-tolerated reads a byte via
-//  `adrp x8,<page>; ldrb w8,[x8,#0x9aa]; tbnz w8,#0,<early-return>` at a
-//  fixed +0x44 offset from the function's start — 1 under Designed-for-iPad,
-//  0 under Catalyst. Patching that *data* byte to 1 does NOT work: it gets
-//  silently recomputed back to 0 before the next read.
-//  Patching the `tbnz` *instruction* itself to an unconditional branch
+//  macOS 27 update: the function's gate structure shifted. The fatal decision
+//  now lives inside the block literal invoked from the +104 path (bl at +120,
+//  before the old +0x44 gate ever executes): the block reads a flag byte via
+//  `adrp x8,<page>; ldrb w8,[x8,#0xaeb]; tbz w8,#0,<fatal-path>`, and the
+//  fatal path ends in `brk #0` after logging "UIScene life cycle is required
+//  for apps built with this SDK". Patching the old +0x44 `tbnz` is therefore
+//  too late on this build.
+//  Instead we force the *first* gate, at +0x14:
+//    `adrp x8,<page>; ldrb w8,[x8,#0xae8]; tbnz w8,#0,<+96 early return>`
+//  — the "already handled, tolerate" check — into an unconditional branch.
+//  The outer function then returns before either block literal is invoked,
+//  so the fatal evaluator never runs. Patching that *data* byte to 1 still
+//  does NOT work: it gets silently recomputed back to 0 before the next
+//  read. Patching the `tbnz` *instruction* to an unconditional branch
 //
 //
 
@@ -36,31 +43,35 @@
 extern kern_return_t litehook_unprotect(vm_address_t addr, vm_size_t size);
 extern kern_return_t litehook_protect(vm_address_t addr, vm_size_t size);
 
-// _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption's opening:
+// _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption's opening
+// (macOS 27.0, verified live under lldb):
 //   pacibsp
 //   stp x29, x30, [sp, #-0x10]!
 //   mov x29, sp
 //   adrp x8, <page>              <- position-dependent; wildcarded below
-//   ldrb w8, [x8, #0x9a8]
-// The ldrb is a register+immediate load (no PC-relative addressing), so its
-// encoding is identical regardless of where in memory the function lands —
-// together with the fixed prologue this is specific enough to be a
-// reliable anchor inside UIKitCore's __TEXT.
+//   ldrb w8, [x8, #0xae8]
+//   tbnz w8, #0x0, <+96>         <- gate 1, the one we patch
+// The ldrb is a register+immediate load (no PC-relative addressing) and the
+// tbnz's imm14 is a fixed function-relative distance, so their encodings are
+// identical regardless of where in memory the function lands — together with
+// the fixed prologue this is specific enough to be a reliable anchor inside
+// UIKitCore's __TEXT.
 static const uint32_t kSigWord0 = 0xd503237f; // pacibsp
 static const uint32_t kSigWord1 = 0xa9bf7bfd; // stp x29, x30, [sp, #-0x10]!
 static const uint32_t kSigWord2 = 0x910003fd; // mov x29, sp
 // word[3] (adrp) is a wildcard.
-static const uint32_t kSigWord4 = 0x3966a108; // ldrb w8, [x8, #0x9a8]
+static const uint32_t kSigWord4 = 0x396ba108; // ldrb w8, [x8, #0xae8]
+static const uint32_t kSigWord5 = 0x37000268; // tbnz w8, #0x0, <+96>
 
-// Function-relative offset (in words) of the gate-3 `tbnz w8,#0,<+96>`
+// Function-relative offset (in words) of the gate-1 `tbnz w8,#0,<+96>`
 // we're patching, confirmed via live disassembly against the function's
 // own entry point (this is a fixed property of the compiled function, not
-// of any particular launch's ASLR slide).
-static const size_t kTbnzWordOffset = 0x44 / 4;
+// of any particular launch's ASLR slide). 
+static const size_t kTbnzWordOffset = 0x14 / 4;
 // The unconditional branch we replace it with: `b` to the same target the
 // tbnz already jumps to (function offset +0x60), encoded relative to the
-// tbnz's own address: opcode 0x14000000 | ((0x60-0x44)/4).
-static const uint32_t kUnconditionalBranch = 0x14000000 | ((0x60 - 0x44) / 4);
+// tbnz's own address: opcode 0x14000000 | ((0x60-0x14)/4).
+static const uint32_t kUnconditionalBranch = 0x14000000 | ((0x60 - 0x14) / 4);
 
 static bool findUIKitCoreText(const uint32_t **outStart, size_t *outWords) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -95,9 +106,10 @@ static const uint32_t *findGateSignature(void) {
     if (!findUIKitCoreText(&base, &words) || words < kTbnzWordOffset + 1) {
         return NULL;
     }
-    for (size_t i = 0; i + 5 <= words; i++) {
+    for (size_t i = 0; i + 6 <= words; i++) {
         if (base[i] == kSigWord0 && base[i + 1] == kSigWord1 &&
-            base[i + 2] == kSigWord2 && base[i + 4] == kSigWord4) {
+            base[i + 2] == kSigWord2 && base[i + 4] == kSigWord4 &&
+            base[i + 5] == kSigWord5) {
             return &base[i];
         }
     }
