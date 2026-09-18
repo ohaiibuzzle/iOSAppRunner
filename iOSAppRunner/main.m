@@ -13,6 +13,7 @@
 #import <dlfcn.h>
 #import <stdio.h>
 #import <unistd.h>
+#import <signal.h>
 #import "Resolution.h"
 #import "GroupContainer.h"
 #import "WindowHooks.h"
@@ -62,6 +63,14 @@ static NSString *claimPendingLaunch(void) {
     return nil;
 }
 
+#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
+static void waitForDebugger(void) {
+    NSLog(@"[wait-for-debugger] Stopping pid %d, attach with lldb/debugserver to continue (JIT requires a debugger on device)", getpid());
+    kill(getpid(), SIGSTOP);
+    NSLog(@"[wait-for-debugger] Debugger attached, resuming");
+}
+#endif
+
 @import MachO;
 int appMainImageIndex = 0;
 void* appExecutableHandle;
@@ -83,7 +92,6 @@ static void *getAppEntryPoint(void *handle) {
     assert(entryoff > 0);
     return (void *)header + entryoff;
 }
-
 
 int main(int argc, char * argv[]) {
     // Determine which app bundle to load. When the selection is missing or
@@ -126,6 +134,10 @@ int main(int argc, char * argv[]) {
     if (!appBundlePath) {
         return runHostLauncher(argc, argv);
     }
+
+#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
+    waitForDebugger();
+#endif
 
     NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 

@@ -347,7 +347,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
 					"-Xlinker",
 					"-platform_version",
 					"-Xlinker",
@@ -471,7 +472,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
 					"-Xlinker",
 					"-platform_version",
 					"-Xlinker",
