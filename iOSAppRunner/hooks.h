@@ -10,3 +10,4 @@
 void* getGuestAppHeader(void);
 void hook_init(void);
 void overwriteExecPath(const char *newExecPath);
+void GuestCryptidPatchInit(void);

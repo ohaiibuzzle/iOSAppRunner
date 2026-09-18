@@ -9,6 +9,7 @@ import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
 import Darwin
+import Security
 
 // MARK: - Bridge to the on-device install/conversion pipeline.
 //
@@ -43,6 +44,14 @@ private func c_SetGuestPlaceholderWindow(_ window: UnsafeRawPointer)
 
 @_silgen_name("GuestAdoptSceneLessWindows")
 private func c_GuestAdoptSceneLessWindows() -> UnsafeRawPointer?
+
+@_silgen_name("SecTaskCreateFromSelf")
+private func c_SecTaskCreateFromSelf(_ allocator: CFAllocator?) -> CFTypeRef?
+
+@_silgen_name("SecTaskCopyValueForEntitlement")
+private func c_SecTaskCopyValueForEntitlement(_ task: CFTypeRef,
+                                              _ entitlement: CFString,
+                                              _ error: UnsafeMutablePointer<CFError?>?) -> CFTypeRef?
 
 // MARK: - App / Scene Delegates
 
@@ -452,6 +461,77 @@ final class LauncherModel: ObservableObject {
         reload()
     }
 
+    // MARK: - Keychain reset (debug)
+
+    func resetAllKeychainItems() {
+        guard !isWorking else { return }
+        isWorking = true
+        status = "Resetting keychain…"
+        Task {
+            let summary = await Task.detached(priority: .userInitiated) {
+                Self.wipeHostKeychainItems()
+            }.value
+            isWorking = false
+            status = summary
+        }
+    }
+
+    private nonisolated static func wipeHostKeychainItems() -> String {
+        let classes: [CFString] = [kSecClassGenericPassword, kSecClassInternetPassword,
+                                   kSecClassCertificate, kSecClassKey]
+
+        var groups = Set<String>()
+        if let task = c_SecTaskCreateFromSelf(nil) {
+            if let team = c_SecTaskCopyValueForEntitlement(task, "com.apple.developer.team-identifier" as CFString, nil) as? String,
+               let bundleId = Bundle.main.bundleIdentifier {
+                let base = "\(team).\(bundleId).shared"
+                groups.insert(base)
+                for n in 1...127 { groups.insert("\(base).\(n)") }
+            }
+            if let entitled = c_SecTaskCopyValueForEntitlement(task, "keychain-access-groups" as CFString, nil) as? [Any] {
+                for group in entitled.compactMap({ $0 as? String }) { groups.insert(group) }
+            }
+        }
+
+        func dp(_ dict: [CFString: Any]) -> CFDictionary {
+            var d = dict
+            d[kSecUseDataProtectionKeychain] = kCFBooleanTrue
+            return d as CFDictionary
+        }
+
+        var enumerated = 0
+        var deletedSomething = false
+        for cls in classes {
+            var out: AnyObject?
+            let countQuery: [CFString: Any] = [
+                kSecClass: cls,
+                kSecMatchLimit: kSecMatchLimitAll,
+                kSecReturnAttributes: true,
+            ]
+            if SecItemCopyMatching(dp(countQuery), &out) == errSecSuccess,
+               let items = out as? [[String: Any]] {
+                enumerated += items.count
+            }
+
+            if SecItemDelete(dp([kSecClass: cls])) == errSecSuccess {
+                deletedSomething = true
+            }
+            for group in groups {
+                if SecItemDelete(dp([kSecClass: cls, kSecAttrAccessGroup: group])) == errSecSuccess {
+                    deletedSomething = true
+                }
+            }
+        }
+
+        if enumerated > 0 {
+            return "Deleted \(enumerated) keychain item\(enumerated == 1 ? "" : "s")."
+        }
+        if deletedSomething {
+            return "Keychain wiped."
+        }
+        return "No keychain items found."
+    }
+
     // MARK: - Per-app features (RunnerFeatures.plist)
 
     func featureEnabled(_ key: String, for app: InstalledApp) -> Bool {
@@ -568,6 +648,7 @@ struct LauncherView: View {
     @State private var showImporter = false
     @State private var pendingImport: [URL]?
     @State private var showImportSheet = false
+    @State private var confirmKeychainReset = false
 
     var body: some View {
         NavigationView {
@@ -612,6 +693,19 @@ struct LauncherView: View {
                             Text(model.status).font(.callout)
                         }
                     }
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        confirmKeychainReset = true
+                    } label: {
+                        Text("Reset All Keychain Items")
+                    }
+                    .disabled(model.isWorking)
+                } header: {
+                    Text("Debug")
+                } footer: {
+                    Text("Deletes every keychain item the host stored for guest apps (logins, sessions, tokens)")
                 }
             }
             .listStyle(.insetGrouped)
@@ -669,6 +763,18 @@ struct LauncherView: View {
             }
             .sheet(item: $compatApp) { app in
                 CompatSettingsView(app: app, model: model)
+            }
+            .confirmationDialog(
+                "Reset all keychain items?",
+                isPresented: $confirmKeychainReset,
+                titleVisibility: .visible
+            ) {
+                Button("Reset All Keychain Items", role: .destructive) {
+                    model.resetAllKeychainItems()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Every keychain item stored by guest apps will be deleted.")
             }
             .alert("Error",
                    isPresented: Binding(

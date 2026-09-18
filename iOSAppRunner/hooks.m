@@ -47,8 +47,37 @@ const char* hook_dyld_get_image_name(uint32_t image_index) {
     __attribute__((musttail)) return orig_dyld_get_image_name(image_index);
 }
 
-static void overwriteAppExecutableFileType(void) {
-    struct mach_header_64* appImageMachOHeader = (struct mach_header_64*) orig_dyld_get_image_header(appMainImageIndex);
+void GuestCryptidPatchInit(void) {
+    struct mach_header_64 *mh = (struct mach_header_64 *)orig_dyld_get_image_header(appMainImageIndex);
+    if (!mh || mh->magic != MH_MAGIC_64) {
+        NSLog(@"[cryptid]: no valid guest header");
+        return;
+    }
+    struct encryption_info_command_64 *eic = NULL;
+    uint8_t *p = (uint8_t *)mh + sizeof(struct mach_header_64);
+    for (uint32_t i = 0; i < mh->ncmds; i++) {
+        struct load_command *lc = (struct load_command *)p;
+        if (lc->cmd == LC_ENCRYPTION_INFO_64) { eic = (struct encryption_info_command_64 *)p; break; }
+        p += lc->cmdsize;
+    }
+    if (!eic) {
+        NSLog(@"[cryptid]: guest has no LC_ENCRYPTION_INFO_64");
+        return;
+    }
+    NSLog(@"cryptid: cryptoff=%u cryptsize=%u cryptid=%u -> 1",
+          eic->cryptoff, eic->cryptsize, eic->cryptid);
+    kern_return_t kr = builtin_vm_protect(mach_task_self(), (vm_address_t)mh, 0x1000, false,
+                                          VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr != KERN_SUCCESS) {
+        NSLog(@"[cryptid]: vm_protect failed %#x", kr);
+        return;
+    }
+    eic->cryptid = 1;
+    builtin_vm_protect(mach_task_self(), (vm_address_t)mh, 0x1000, false, VM_PROT_READ);
+    NSLog(@"[cryptid]: applied (cryptid=1)");
+}
+
+static void overwriteAppExecutableFileType(void) {    struct mach_header_64* appImageMachOHeader = (struct mach_header_64*) orig_dyld_get_image_header(appMainImageIndex);
     kern_return_t kret = builtin_vm_protect(mach_task_self(), (vm_address_t)appImageMachOHeader, sizeof(appImageMachOHeader), false, PROT_READ | PROT_WRITE | VM_PROT_COPY);
     if(kret != KERN_SUCCESS) {
         NSLog(@"[LC] failed to change appImageMachOHeader to rw");

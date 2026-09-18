@@ -225,8 +225,7 @@ int main(int argc, char * argv[]) {
             if (handle) {
                 int (*appMain)(int, char **) = (int (*)(int, char **))getAppEntryPoint(handle);
                 NSLog(@"Successfully dlopened app's executable");
-                // Hand the guest a clean argv (just its executable path) so our
-                // private --launch-app tokens never leak into the guest process.
+                GuestCryptidPatchInit();
                 char *guestArgv[] = { (char *)[executablePath UTF8String], NULL };
                 int retcode = appMain(1, guestArgv);
                 NSLog(@"App exited with code %d", retcode);
