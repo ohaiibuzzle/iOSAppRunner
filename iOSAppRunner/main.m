@@ -17,6 +17,7 @@
 #import "Resolution.h"
 #import "GroupContainer.h"
 #import "WindowHooks.h"
+#import "DeviceSpoof.h"
 #import "Loader.h"
 
 static int runHostLauncher(int argc, char *argv[]) {
@@ -232,9 +233,19 @@ int main(int argc, char * argv[]) {
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureKeychain)) {
                 SecItemGuestHooksInit(hostAppIdentifier, appBundle.bundleIdentifier);
             }
+            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureDeviceSpoof)) {
+                DeviceSpoofHooksInit(appBundle);
+            }
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;
             if (handle) {
+                // The guest executable and its frameworks were loaded by the
+                // dlopen above, so their sysctl imports are bound to the real
+                // implementation. Re-run the rebind so their GOTs are patched
+                // before any guest code runs.
+                if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureDeviceSpoof)) {
+                    DeviceSpoofRebindLoadedImages();
+                }
                 int (*appMain)(int, char **) = (int (*)(int, char **))getAppEntryPoint(handle);
                 NSLog(@"Successfully dlopened app's executable");
                 GuestCryptidPatchInit();

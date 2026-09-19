@@ -270,6 +270,8 @@ struct Feature: Identifiable {
                 detail: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing)."),
         Feature(id: "keychain", name: "Keychain remap",
                 detail: "Remap keychain access groups to the host's team ID."),
+        Feature(id: "deviceSpoof", name: "Spoof device (sysctl)",
+                detail: "Report an iPad to apps that check hw.machine / hw.model via sysctl."),
     ]
 
     /// Import-time-only toggles, shown as toggles in the Import sheet. Add any
@@ -287,7 +289,21 @@ struct Feature: Identifiable {
         "groupContainer": true,
         "resolution": true,
         "keychain": true,
+        "deviceSpoof": true,
     ]
+}
+
+/// Device-spoofing configuration shared between the launcher UI and the
+/// runtime hooks. Keys are written into the guest's `RunnerFeatures.plist`;
+/// keep in sync with the `LoaderSpoofKey*` constants in `Loader.h`.
+enum DeviceSpoofConfig {
+    static let machineKey = "spoofDeviceMachine"   // hw.machine
+    static let modelKey = "spoofDeviceModel"       // hw.model
+    static let osVersionKey = "spoofDeviceOSVersion" // kern.osproductversion
+
+    /// Built-in fallbacks used by the hooks when an override is empty.
+    static let defaultMachine = "iPad14,6"
+    static let defaultModel = "iPad14,6"
 }
 
 @MainActor
@@ -552,6 +568,32 @@ final class LauncherModel: ObservableObject {
         }
     }
 
+    /// String override from the guest's RunnerFeatures.plist ("" when unset).
+    func spoofOverride(_ key: String, for app: InstalledApp) -> String {
+        guard let plist = readRunnerFeatures(for: app.url),
+              let value = plist[key] as? String else { return "" }
+        return value
+    }
+
+    /// Writes a string override into the guest's RunnerFeatures.plist. An
+    /// empty/whitespace value removes the key, so the hook falls back to its
+    /// built-in default.
+    func setSpoofOverride(_ key: String, value: String, for app: InstalledApp) {
+        var plist = readRunnerFeatures(for: app.url)
+            ?? Dictionary(uniqueKeysWithValues: Feature.defaultValues.map { ($0, $1) })
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            plist.removeValue(forKey: key)
+        } else {
+            plist[key] = trimmed
+        }
+        if let out = try? PropertyListSerialization.data(fromPropertyList: plist,
+                                                         format: .xml,
+                                                         options: 0) {
+            try? out.write(to: app.url.appendingPathComponent("RunnerFeatures.plist"))
+        }
+    }
+
     private func readRunnerFeatures(for appURL: URL) -> [String: Any]? {
         let url = appURL.appendingPathComponent("RunnerFeatures.plist")
         guard let data = try? Data(contentsOf: url),
@@ -564,6 +606,19 @@ final class LauncherModel: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// Reads a real sysctl string in the *launcher* process (the guest hooks
+    /// never run here, so this always returns the host's true hardware value).
+    /// Used to show the unspoofed identity as the hint in the Compatibility
+    /// Settings text fields.
+    static func realSysctlValue(_ name: String) -> String? {
+        var size: size_t = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+        let value = String(cString: buffer)
+        return value.isEmpty ? nil : value
+    }
 
     private func ensureAppsDirectory() {
         try? FileManager.default.createDirectory(at: LauncherPaths.appsDirectory,
@@ -930,6 +985,10 @@ private struct CompatSettingsView: View {
                 } footer: {
                     Text("Runtime hooks can be used to mitigate issues with the guest app.")
                 }
+
+                if model.featureEnabled("deviceSpoof", for: app) {
+                    DeviceSpoofFields(model: model, app: app)
+                }
             }
             .navigationTitle("Compatibility — \(app.displayName)")
             .toolbar {
@@ -941,11 +1000,62 @@ private struct CompatSettingsView: View {
                         for feature in Feature.all {
                             model.setFeature(feature.id, enabled: Feature.defaultValues[feature.id] ?? true, for: app)
                         }
+                        for key in [DeviceSpoofConfig.machineKey,
+                                    DeviceSpoofConfig.modelKey,
+                                    DeviceSpoofConfig.osVersionKey] {
+                            model.setSpoofOverride(key, value: "", for: app)
+                        }
                     }
                 }
             }
         }
         .navigationViewStyle(.stack)
+    }
+}
+
+/// Customizable device identity shown when the "Spoof device (sysctl)" hook is
+/// enabled. Values are written to the guest's RunnerFeatures.plist and read by
+/// DeviceSpoof.m at launch; empty fields use the built-in iPad defaults.
+private struct DeviceSpoofFields: View {
+    @ObservedObject var model: LauncherModel
+    let app: InstalledApp
+
+    /// Real (unspoofed) host identity, for the field hints.
+    private let realMachine = LauncherModel.realSysctlValue("hw.machine") ?? "unknown"
+    private let realModel = LauncherModel.realSysctlValue("hw.model") ?? "unknown"
+    private let realOSVersion = LauncherModel.realSysctlValue("kern.osproductversion") ?? "unknown"
+
+    var body: some View {
+        Section {
+            spoofField("Machine (hw.machine)",
+                       key: DeviceSpoofConfig.machineKey,
+                       hint: "Real: \(realMachine)")
+            spoofField("Model (hw.model)",
+                       key: DeviceSpoofConfig.modelKey,
+                       hint: "Real: \(realModel); empty = same as machine")
+            spoofField("iOS version (kern.osproductversion)",
+                       key: DeviceSpoofConfig.osVersionKey,
+                       hint: "Real: \(realOSVersion)")
+        } header: {
+            Text("Device identity")
+        } footer: {
+            Text("Values returned by sysctl/sysctlbyname for hw.machine and hw.model (plus kern.osproductversion when set). Empty fields fall back to the built-in iPad defaults. The device family reported to MIB-based sysctl is derived from the machine name (text before the comma).")
+        }
+    }
+
+    private func spoofField(_ title: String, key: String, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            TextField(hint, text: Binding(
+                get: { model.spoofOverride(key, for: app) },
+                set: { model.setSpoofOverride(key, value: $0, for: app) }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .autocorrectionDisabled()
+            Text(hint)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
     }
 }
 
