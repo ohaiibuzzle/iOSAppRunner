@@ -2,14 +2,6 @@
 //  GroupContainer.m
 //  BaseiOSApp
 //
-//  The host sandbox has no app-group entitlement, so any group container the
-//  guest resolves (e.g. `group.com.kern.Facebook`) maps to a real
-//  `~/Library/Group Containers/...` path we are not permitted to touch. That
-//  shows up as `Operation not permitted` deep inside C++ filesystem iteration.
-//  Instead of fighting every filesystem call, redirect the request that *hands
-//  out* the container — `-[NSFileManager containerURLForSecurityApplicationGroupIdentifier:]`
-//  — to a writable directory under the guest's sandboxed home.
-//
 
 #import "GroupContainer.h"
 #import <objc/runtime.h>

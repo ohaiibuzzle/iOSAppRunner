@@ -2,15 +2,6 @@
 //  HostApp.swift
 //  BaseiOSAppHost
 //
-//  Native, unsandboxed macOS host app. Owns everything privileged: IPA
-//  import/conversion (GuestStore), moving guests into the shared runtime
-//  container, per-app runtime-mode selection, launching the runtimes
-//  (RuntimeLauncher, direct argv + JIT enabling), and keychain slot
-//  management (KeychainManager).
-//
-//  Deliberately Mac-idiomatic: menu-bar commands (File/Guest/View), an
-//  NSOpenPanel-driven import flow with ⌘O, double-click to launch, native
-//  alerts for destructive confirmations, and selection-aware menus.
 //
 
 import SwiftUI
@@ -29,21 +20,17 @@ struct HostFeature: Identifiable {
     /// Runtime-toggleable hooks shown in the Compatibility Settings sheet.
     /// Keys must match the `LoaderFeature*` constants in Runtime/Loader.h.
     static let all: [HostFeature] = [
-        HostFeature(id: "groupContainer", name: "Group containers",
-                    detail: "Redirect security-application-group URLs into the guest home."),
-        HostFeature(id: "resolution", name: "Spoof display resolution",
-                    detail: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing)."),
-        HostFeature(id: "keychain", name: "Keychain remap",
-                    detail: "Remap keychain access groups to the host's team ID."),
-        HostFeature(id: "deviceSpoof", name: "Spoof device (sysctl)",
-                    detail: "Report an iPad to apps that check hw.machine / hw.model via sysctl."),
+        HostFeature(id: "resolution", name: String(localized: "Spoof display resolution"),
+                    detail: String(localized: "Fake UIScreen to match the Mac's display and lock the window size (unless the app supports resizing).")),
+        HostFeature(id: "deviceSpoof", name: String(localized: "Spoof device (sysctl)"),
+                    detail: String(localized: "Report an iPad to apps that check hw.machine / hw.model via sysctl.")),
     ]
 
     /// Import-time-only toggles, shown in the Import sheet. Add any future
     /// convert-time features here.
     static let importOnly: [HostFeature] = [
-        HostFeature(id: "scene", name: "UIScene compatibility fix",
-                    detail: "Inject a scene manifest for legacy apps that uses the legacy UIScene lifecycle."),
+        HostFeature(id: "scene", name: String(localized: "UIScene compatibility fix"),
+                    detail: String(localized: "Inject a scene manifest for legacy apps that uses the legacy UIScene lifecycle.")),
     ]
 
     /// Default enabled-state per feature. `scene` (import-time) is default-OFF;
@@ -99,21 +86,48 @@ final class HostModel: ObservableObject {
     @Published var keychainResetConfirmApp: InstalledApp?
     @Published var confirmKeychainReset: Bool = false
 
+    /// Cached per-app render data (runtime mode + icon). Refreshed off the
+    /// main thread in reload(); keyed by install name (InstalledApp.id).
+    @Published var runtimeModes: [String: RuntimeMode] = [:]
+    @Published var icons: [String: NSImage] = [:]
+
     func reload() {
         GuestPaths.ensureAppsDirectory()
+        Task {
+            let scan = await Task.detached(priority: .userInitiated) {
+                Self.scanApps()
+            }.value
+            apps = scan.apps
+            runtimeModes = scan.runtimeModes
+            icons = scan.icons
+            // Drop a stale selection if its app vanished.
+            if let sel = selection, !scan.apps.contains(where: { $0.id == sel.id }) {
+                selection = nil
+            }
+        }
+    }
+
+    /// Directory scan + plist reads + icon loading. Runs OFF the main thread;
+    /// the result is published on the main actor by reload().
+    private nonisolated static func scanApps() -> (
+        apps: [InstalledApp], runtimeModes: [String: RuntimeMode], icons: [String: NSImage]
+    ) {
         let fm = FileManager.default
         let contents = (try? fm.contentsOfDirectory(at: GuestPaths.appsDirectory,
                                                     includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-        let result: [InstalledApp] = contents.compactMap { url in
+        var result: [InstalledApp] = []
+        var modes: [String: RuntimeMode] = [:]
+        var icons: [String: NSImage] = [:]
+        for url in contents {
             guard url.pathExtension.lowercased() == "app",
                   (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-                return nil
+                continue
             }
             let plist = GuestStore.readInfoPlist(at: url) ?? [:]
             let name = (plist["CFBundleDisplayName"] as? String)
                 ?? (plist["CFBundleName"] as? String)
                 ?? url.deletingPathExtension().lastPathComponent
-            return InstalledApp(
+            let app = InstalledApp(
                 id: url.lastPathComponent,
                 url: url,
                 displayName: name,
@@ -121,21 +135,22 @@ final class HostModel: ObservableObject {
                 version: plist["CFBundleShortVersionString"] as? String,
                 iconPath: findIcon(in: url, plist: plist)
             )
+            result.append(app)
+            GuestStore.enforceRequiredFeatures(for: url)
+            modes[app.id] = GuestStore.runtimeMode(for: url)
+            if let iconPath = app.iconPath {
+                icons[app.id] = NSImage(contentsOfFile: iconPath)
+            }
         }
-        .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-
-        apps = result
-        // Drop a stale selection if its app vanished.
-        if let sel = selection, !result.contains(where: { $0.id == sel.id }) {
-            selection = nil
-        }
+        result.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        return (result, modes, icons)
     }
 
     /// Opens the standard open panel (⌘O / toolbar) and stages the picked
     /// IPAs for the import-options sheet.
     func pickAndImportIPAs() {
         let panel = NSOpenPanel()
-        panel.title = "Import IPAs"
+        panel.title = String(localized: "Import IPAs")
         panel.allowedContentTypes = [.ipaType]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -158,25 +173,25 @@ final class HostModel: ObservableObject {
 
         var failures: [String] = []
         for (index, url) in urls.enumerated() {
-            status = "Importing \(index + 1) of \(urls.count): \(url.lastPathComponent)…"
+            status = String(localized: "Importing \(index + 1) of \(urls.count): \(url.lastPathComponent)…")
             do {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 let installed = try await Task.detached(priority: .userInitiated) {
                     try GuestStore.install(from: url, importFeatures: importFeatures)
                 }.value
-                status = "Imported \(installed)"
+                status = String(localized: "Imported \(installed)")
             } catch {
-                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                failures.append(String(localized: "\(url.lastPathComponent): \(error.localizedDescription)"))
             }
         }
 
         if failures.isEmpty {
-            status = urls.count == 1 ? "Imported \(urls[0].lastPathComponent)"
-                                     : "Imported \(urls.count) apps"
+            status = urls.count == 1 ? String(localized: "Imported \(urls[0].lastPathComponent)")
+                                     : String(localized: "Imported \(urls.count) apps")
         } else {
-            status = "Imported \(urls.count - failures.count) of \(urls.count)"
-            errorMessage = "Some imports failed:\n" + failures.joined(separator: "\n")
+            status = String(localized: "Imported \(urls.count - failures.count) of \(urls.count)")
+            errorMessage = String(localized: "Some imports failed:\n\(failures.joined(separator: "\n"))")
         }
     }
 
@@ -200,8 +215,7 @@ final class HostModel: ObservableObject {
         let outcome: LaunchOutcome
         switch mode {
         case .ios:
-            outcome = RuntimeLauncher.launchiOS(installName: app.id,
-                                                attachDebugger: GuestStore.jitEnabled(for: app.url))
+            outcome = RuntimeLauncher.launchiOS(installName: app.id)
         case .catalyst, .auto:
             outcome = RuntimeLauncher.launch(installName: app.id, mode: mode)
         }
@@ -218,11 +232,11 @@ final class HostModel: ObservableObject {
     /// its slot assignment.
     func resetKeychain(for app: InstalledApp) {
         guard let bid = app.bundleIdentifier, !bid.isEmpty else {
-            status = "No bundle ID; nothing to reset"
+            status = String(localized: "No bundle ID; nothing to reset")
             return
         }
         isWorking = true
-        status = "Resetting \(app.displayName) keychain…"
+        status = String(localized: "Resetting \(app.displayName) keychain…")
         Task {
             let summary = await Task.detached(priority: .userInitiated) {
                 KeychainManager.resetKeychain(bundleID: bid)
@@ -235,7 +249,7 @@ final class HostModel: ObservableObject {
     func resetAllKeychainItems() {
         guard !isWorking else { return }
         isWorking = true
-        status = "Resetting keychain…"
+        status = String(localized: "Resetting keychain…")
         Task {
             let summary = await Task.detached(priority: .userInitiated) {
                 KeychainManager.wipeAllGuestItems()
@@ -266,16 +280,7 @@ final class HostModel: ObservableObject {
 
     func setRuntimeMode(_ mode: RuntimeMode, for app: InstalledApp) {
         GuestStore.writeRunnerFeatures(["runtime": mode.rawValue], for: app.url)
-        objectWillChange.send()
-    }
-
-    /// JIT enabling for a guest (default ON).
-    func jitEnabled(for app: InstalledApp) -> Bool {
-        GuestStore.jitEnabled(for: app.url)
-    }
-
-    func setJITEnabled(_ enabled: Bool, for app: InstalledApp) {
-        GuestStore.writeRunnerFeatures(["jit": enabled], for: app.url)
+        runtimeModes[app.id] = mode
         objectWillChange.send()
     }
 
@@ -308,7 +313,7 @@ final class HostModel: ObservableObject {
 
     // MARK: - Helpers
 
-    private func findIcon(in appURL: URL, plist: [String: Any]) -> String? {
+    private nonisolated static func findIcon(in appURL: URL, plist: [String: Any]) -> String? {
         // Try Info.plist hints first
         var candidates: [String] = []
         if let icons = plist["CFBundleIcons"] as? [String: Any],
@@ -438,26 +443,33 @@ struct HostCommands: Commands {
 
 struct ContentView: View {
     @EnvironmentObject private var model: HostModel
-
-    private var deleteConfirmAppTitle: String {
-        model.deleteConfirmApp.map { "Delete \($0.displayName) and its data?" } ?? ""
-    }
-
-    private var keychainResetTitle: String {
-        model.keychainResetConfirmApp.map { "Reset keychain for \($0.displayName)?" } ?? ""
-    }
+    /// Local selection state: `List` writes its selection binding during the
+    /// view-update pass, so binding it straight to the model's `@Published`
+    /// property triggers "Publishing changes from within view updates".
+    /// Mirror it into the model (which the Guest menu reads) via `onChange`.
+    @State private var selection: InstalledApp?
 
     var body: some View {
-        List(selection: $model.selection) {
+        List(selection: $selection) {
             installedAppsSection
             statusSection
         }
         .listStyle(.inset(alternatesRowBackgrounds: true))
         .frame(minWidth: 520, minHeight: 420)
-        .navigationTitle("BaseiOSApp")
+        .navigationTitle("iOS App Loader")
         .toolbar { toolbarContent }
         .modifier(ContentViewSheets())
         .modifier(ContentViewAlerts())
+        .onChange(of: selection) { _, newValue in
+            model.selection = newValue
+        }
+        .onChange(of: model.apps) { _, apps in
+            // Drop a stale selection if its app vanished (e.g. deleted via
+            // the Guest menu while selected).
+            if let sel = selection, !apps.contains(where: { $0.id == sel.id }) {
+                selection = nil
+            }
+        }
         .task { model.reload() }
     }
 
@@ -559,7 +571,7 @@ struct ContentView: View {
 
         func body(content: Content) -> some View {
             content.alert(
-                model.deleteConfirmApp.map { "Delete \($0.displayName) and its data?" } ?? "",
+                model.deleteConfirmApp.map { String(localized: "Delete \($0.displayName) and its data?") } ?? "",
                 isPresented: Binding(
                     get: { model.deleteConfirmApp != nil },
                     set: { if !$0 { model.deleteConfirmApp = nil } }
@@ -583,7 +595,7 @@ struct ContentView: View {
 
         func body(content: Content) -> some View {
             content.alert(
-                model.keychainResetConfirmApp.map { "Reset keychain for \($0.displayName)?" } ?? "",
+                model.keychainResetConfirmApp.map { String(localized: "Reset keychain for \($0.displayName)?") } ?? "",
                 isPresented: Binding(
                     get: { model.keychainResetConfirmApp != nil },
                     set: { if !$0 { model.keychainResetConfirmApp = nil } }
@@ -682,8 +694,8 @@ private struct AppRow: View {
     }
 
     private var runtimeBadge: some View {
-        let mode = model.runtimeMode(for: app)
-        return Text(mode == .ios ? "iOS" : mode == .auto ? "Auto" : "Catalyst")
+        let mode = model.runtimeModes[app.id] ?? .catalyst
+        return Text(mode == .ios ? String(localized: "iOS") : mode == .auto ? String(localized: "Auto") : String(localized: "Catalyst"))
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -692,9 +704,8 @@ private struct AppRow: View {
 
     @ViewBuilder
     private var iconView: some View {
-        if let iconPath = app.iconPath,
-           let image = NSImage(contentsOfFile: iconPath) {
-            Image(nsImage: image)
+        if let icon = model.icons[app.id] {
+            Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
@@ -722,7 +733,7 @@ private struct ImportOptionsView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section(urls.count == 1 ? "Selected app" : "Selected apps (\(urls.count))") {
+                Section(urls.count == 1 ? String(localized: "Selected app") : String(localized: "Selected apps (\(urls.count))")) {
                     ForEach(urls, id: \.self) { url in
                         Text(url.lastPathComponent)
                             .lineLimit(1)
@@ -798,21 +809,10 @@ private struct CompatSettingsView: View {
                         Text("Auto").tag(RuntimeMode.auto)
                     }
                     .pickerStyle(.radioGroup)
-                    Toggle(isOn: Binding(
-                        get: { model.jitEnabled(for: app) },
-                        set: { model.setJITEnabled($0, for: app) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Attach host debugger (iOS runtime)")
-                            Text("The iOS runtime can only load guest dylibs (and map JIT memory) while a debugger has been attached, so the host attaches and detaches around every launch. Disable only to debug the runtime itself — guests will fail to load.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
                 } header: {
                     Text("Runtime")
                 } footer: {
-                    Text("The shared data container and keychain slots are the same for every runtime mode, so logins and app data carry over.")
+                    Text("Data are shared between the runtimes.")
                 }
 
                 Section {
@@ -883,17 +883,17 @@ private struct DeviceSpoofFields: View {
         Section {
             spoofField("Machine (hw.machine)",
                        key: DeviceSpoofConfig.machineKey,
-                       hint: "Real: \(realMachine)")
+                       hint: String(localized: "Real: \(realMachine)"))
             spoofField("Model (hw.model)",
                        key: DeviceSpoofConfig.modelKey,
-                       hint: "Real: \(realModel); empty = same as machine")
+                       hint: String(localized: "Real: \(realModel); empty = same as machine"))
             spoofField("iOS version (kern.osproductversion)",
                        key: DeviceSpoofConfig.osVersionKey,
-                       hint: "Real: \(realOSVersion)")
+                       hint: String(localized: "Real: \(realOSVersion)"))
         } header: {
             Text("Device identity")
         } footer: {
-            Text("Values returned by sysctl/sysctlbyname for hw.machine and hw.model (plus kern.osproductversion when set). Empty fields fall back to the built-in iPad defaults. The device family reported to MIB-based sysctl is derived from the machine name (text before the comma).")
+            Text("Values returned by sysctl/sysctlbyname. Defaults to real device's values")
         }
     }
 

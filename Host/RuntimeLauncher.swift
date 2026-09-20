@@ -2,27 +2,6 @@
 //  RuntimeLauncher.swift
 //  BaseiOSAppHost
 //
-//  Spawns the minimal runtimes. The host is unsandboxed, so it execs the
-//  Catalyst runtime directly with argv — no `pending_launch` claim queue, no
-//  LaunchServices dance:
-//
-//      <runtime exec> --launch-app <installName>
-//
-//  The iOS runtime ("designed for iPad" build) is a different story:
-//  iOS-platform binaries can't be exec'd directly on macOS — the bundle must
-//  use the Mac-iOS *wrapped* layout (outer .app containing Wrapper/<inner>.app
-//  plus a WrappedBundle symlink; Xcode produces exactly this as the
-//  .XCInstall product for Designed-for-iPad builds) and be launched through
-//  LaunchServices (`open -n`).
-//
-//  Furthermore, the runtime's LCDyld library-validation bypass — and guest
-//  JIT — only work while the process carries the debugger flag, so the host
-//  must attach and detach a debugger around every iOS-runtime launch:
-//  the runtime passes --wait-for-host, SIGSTOPs itself at startup, the host
-//  finds the pid, does task_for_pid + ptrace(PT_ATTACHEXC) + PT_DETACH
-//  (SIGCONT), and the runtime proceeds with AMFI satisfied. No debugger
-//  remains attached.
-//
 
 import AppKit
 import Darwin
@@ -188,33 +167,30 @@ enum RuntimeLauncher {
 
         switch mode {
         case .ios:
-            return launchiOS(installName: installName, attachDebugger: true)
+            return launchiOS(installName: installName)
         case .catalyst, .auto:
             guard let bundle = resolveBundle(.catalyst),
                   let exec = executablePath(of: bundle) else {
                 if mode == .auto {
-                    return launchiOS(installName: installName, attachDebugger: true)
+                    return launchiOS(installName: installName)
                 }
                 return LaunchOutcome(ok: false,
-                                     message: "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets.")
+                                     message: String(localized: "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets."))
             }
             return launchCatalyst(executable: exec, bundlePath: bundle.path, installName: installName)
         }
     }
 
-    /// Launches a guest under the iOS runtime. The debugger attach is not
-    /// optional for correctness — the runtime's library-validation bypass
-    /// (and guest JIT) require it — but it can be skipped deliberately to
-    /// debug the runtime itself (the guest will then fail to load).
-    static func launchiOS(installName: String, attachDebugger: Bool) -> LaunchOutcome {
+    /// Launches a guest under the iOS runtime. The debugger attach is a
+    /// launch requirement, not an option: the runtime's library-validation
+    /// bypass (and guest JIT) only work with the debugger flag set.
+    static func launchiOS(installName: String) -> LaunchOutcome {
         guard let bundle = resolveBundle(.ios) else {
             return LaunchOutcome(ok: false,
-                                 message: "Runtime-iOS.app not found; build and embed the runtime target.")
+                                 message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
         }
         writeDisplayMetrics()
-        return launchiOSViaOpen(bundle: ensureWrapped(bundle),
-                                installName: installName,
-                                attachDebugger: attachDebugger)
+        return launchiOSViaOpen(bundle: ensureWrapped(bundle), installName: installName)
     }
 
     // MARK: - Catalyst spawning (direct exec)
@@ -222,13 +198,13 @@ enum RuntimeLauncher {
     private static func launchCatalyst(executable: URL, bundlePath: String, installName: String) -> LaunchOutcome {
         let rc = spawn(executable: executable.path, args: ["--launch-app", installName])
         if rc == 0 {
-            return LaunchOutcome(ok: true, message: "Launched via Catalyst runtime")
+            return LaunchOutcome(ok: true, message: String(localized: "Launched via Catalyst runtime"))
         }
 
         NSLog("[launcher] direct Catalyst spawn failed (rc=%d); falling back to open -n --args", rc)
         return openFallback(bundlePath: bundlePath, installName: installName,
-                            successMessage: "Launched via Catalyst runtime (open)",
-                            failurePrefix: "Failed to launch Catalyst runtime")
+                            successMessage: String(localized: "Launched via Catalyst runtime (open)"),
+                            failurePrefix: String(localized: "Failed to launch Catalyst runtime"))
     }
 
     /// Launches a runtime bundle via `open -n --args`, capturing stderr so
@@ -239,45 +215,37 @@ enum RuntimeLauncher {
         if status == 0 {
             return LaunchOutcome(ok: true, message: successMessage)
         }
-        let detail = stderrText.isEmpty ? "open exited with \(status)" : stderrText
-        return LaunchOutcome(ok: false, message: "\(failurePrefix): \(detail)")
+        let detail = stderrText.isEmpty ? String(localized: "open exited with \(status)") : stderrText
+        return LaunchOutcome(ok: false, message: String(localized: "\(failurePrefix): \(detail)"))
     }
 
     // MARK: - iOS runtime (LaunchServices + debugger attach)
 
-    /// Launches the wrapped iOS runtime through LaunchServices. When
-    /// `attachDebugger` is set, the runtime is launched with --wait-for-host
-    /// (it SIGSTOPs itself at startup) and the host finds the spawned pid and
-    /// attaches/detaches so AMFI's library-validation checks (and guest JIT)
-    /// are satisfied before any guest dylib is loaded.
-    private static func launchiOSViaOpen(bundle: URL, installName: String, attachDebugger: Bool) -> LaunchOutcome {
+    /// Launches the wrapped iOS runtime through LaunchServices. The runtime
+    /// is launched with --wait-for-host (it SIGSTOPs itself at startup) and
+    /// the host finds the spawned pid and attaches/detaches so AMFI's
+    /// library-validation checks (and guest JIT) are satisfied before any
+    /// guest dylib is loaded.
+    private static func launchiOSViaOpen(bundle: URL, installName: String) -> LaunchOutcome {
         // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
         // (unnotarized) bundle as damaged.
-        c_stripXattrsRecursive(bundle.path)
+        var _ = c_stripXattrsRecursive(bundle.path)
 
-        var openArgs = ["--launch-app", installName]
-        if attachDebugger {
-            openArgs.append("--wait-for-host")
-        }
-        let (status, stderrText) = runOpen(bundlePath: bundle.path, arguments: openArgs)
+        let (status, stderrText) = runOpen(bundlePath: bundle.path,
+                                           arguments: ["--launch-app", installName, "--wait-for-host"])
         guard status == 0 else {
-            let detail = stderrText.isEmpty ? "open exited with \(status)" : stderrText
-            return LaunchOutcome(ok: false, message: "Failed to launch iOS runtime: \(detail)")
-        }
-
-        guard attachDebugger else {
-            return LaunchOutcome(ok: true,
-                                 message: "Launched via iOS runtime (debugger attach disabled; guests will fail to load)")
+            let detail = stderrText.isEmpty ? String(localized: "open exited with \(status)") : stderrText
+            return LaunchOutcome(ok: false, message: String(localized: "Failed to launch iOS runtime: \(detail)"))
         }
 
         // The runtime SIGSTOPs itself right after spawn; find it and attach.
         guard let pid = pollForRuntimePID(timeout: 8.0) else {
             return LaunchOutcome(ok: false,
-                                 message: "iOS runtime launched but the host could not find its process to attach the debugger (guests will fail to load). Try again.")
+                                 message: String(localized: "iOS runtime launched, but its process can't be found. Try again."))
         }
         attachHostDebugger(pid: pid)
         return LaunchOutcome(ok: true,
-                             message: "Launched via iOS runtime (debugger attached for library-validation bypass/JIT)")
+                             message: String(localized: "Launched via iOS runtime"))
     }
 
     /// task_for_pid + ptrace(PT_ATTACHEXC)/PT_DETACH. Both binaries are

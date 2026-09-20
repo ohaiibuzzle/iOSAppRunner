@@ -2,10 +2,6 @@
 //  ZipExtractor.swift
 //  iOSAppRunner
 //
-//  Minimal ZIP/IPA extractor. Supports stored (method 0) and deflate
-//  (method 8) entries, ZIP64 size/offset fields, Unix symlinks, and
-//  preserves POSIX permissions when present.
-//
 
 import Foundation
 
@@ -18,11 +14,11 @@ enum ZipError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAZipFile: return "Not a valid ZIP/IPA archive."
-        case .unsupportedCompression(let m): return "Unsupported compression method (\(m))."
-        case .corrupt(let detail): return "Corrupt archive: \(detail)."
-        case .pathEscape(let name): return "Refused to extract entry escaping destination: \(name)."
-        case .decompressionFailed(let detail): return "Decompression failed: \(detail)."
+        case .notAZipFile: return String(localized: "Not a valid ZIP/IPA archive.")
+        case .unsupportedCompression(let m): return String(localized: "Unsupported compression method (\(Int(m))).")
+        case .corrupt(let detail): return String(localized: "Corrupt archive: \(detail).")
+        case .pathEscape(let name): return String(localized: "Refused to extract entry escaping destination: \(name).")
+        case .decompressionFailed(let detail): return String(localized: "Decompression failed: \(detail).")
         }
     }
 }

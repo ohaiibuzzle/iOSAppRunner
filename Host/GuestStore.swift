@@ -116,14 +116,14 @@ enum ImportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingPayload: return "IPA is missing the Payload directory."
-        case .missingAppBundle: return "IPA does not contain a .app bundle."
+        case .missingPayload: return String(localized: "IPA is missing the Payload directory.")
+        case .missingAppBundle: return String(localized: "IPA does not contain a .app bundle.")
         case .missingExecutableName:
-            return "Could not determine CFBundleExecutable from the bundle's Info.plist."
+            return String(localized: "Could not determine CFBundleExecutable from the bundle's Info.plist.")
         case .dylibifyFailed(let code):
-            return "dylibify failed (rc=\(code))."
+            return String(localized: "dylibify failed (rc=\(code)).")
         case .replaceExecutableFailed(let err):
-            return "Failed to swap the dylibified executable in: \(err.localizedDescription)"
+            return String(localized: "Failed to swap the dylibified executable in: \(err.localizedDescription)")
         }
     }
 }
@@ -276,9 +276,9 @@ enum GuestStore {
             if FileManager.default.fileExists(atPath: guestHome) {
                 do {
                     try FileManager.default.removeItem(atPath: guestHome)
-                    summary = summary.map { "\($0) Data removed." } ?? "Data removed."
+                    summary = summary.map { String(localized: "\($0) Data removed.") } ?? String(localized: "Data removed.")
                 } catch {
-                    return "App deleted, but failed to remove guest data: \(error.localizedDescription)"
+                    return String(localized: "App deleted, but failed to remove guest data: \(error.localizedDescription)")
                 }
             }
 
@@ -298,9 +298,9 @@ enum GuestStore {
         do {
             try FileManager.default.removeItem(at: appURL)
         } catch {
-            return "Delete failed: \(error.localizedDescription)"
+            return String(localized: "Delete failed: \(error.localizedDescription)")
         }
-        return summary ?? "Deleted app"
+        return summary ?? String(localized: "Deleted app")
     }
 
     // MARK: - RunnerFeatures.plist
@@ -330,6 +330,35 @@ enum GuestStore {
         }
     }
 
+    /// Features that guests require to function at all; never user-disableable.
+    /// Forced back to `true` whenever a manifest says otherwise (e.g. toggled
+    /// off before these became mandatory).
+    static let requiredFeatures: [String: Bool] = [
+        "keychain": true,
+        "groupContainer": true,
+    ]
+
+    /// Rewrites a guest's RunnerFeatures.plist so every required feature is
+    /// enabled. No-op when the manifest already complies.
+    static func enforceRequiredFeatures(for appURL: URL) {
+        guard let plist = readRunnerFeatures(for: appURL) else { return }
+        var changed = false
+        var repaired = plist
+        for (key, value) in requiredFeatures {
+            if (plist[key] as? Bool) != value {
+                repaired[key] = value
+                changed = true
+            }
+        }
+        guard changed else { return }
+        if let out = try? PropertyListSerialization.data(fromPropertyList: repaired,
+                                                         format: .xml,
+                                                         options: 0) {
+            try? out.write(to: appURL.appendingPathComponent("RunnerFeatures.plist"))
+            NSLog("[host] re-enabled required features for %@", appURL.lastPathComponent as NSString)
+        }
+    }
+
     /// Runtime mode for a guest; missing key = Catalyst (legacy behavior).
     static func runtimeMode(for appURL: URL) -> RuntimeMode {
         guard let plist = readRunnerFeatures(for: appURL),
@@ -338,16 +367,6 @@ enum GuestStore {
             return .defaultMode
         }
         return mode
-    }
-
-    /// JIT enabling for a guest (used by the iOS runtime only); missing key =
-    /// enabled.
-    static func jitEnabled(for appURL: URL) -> Bool {
-        guard let plist = readRunnerFeatures(for: appURL),
-              let value = plist["jit"] else {
-            return true
-        }
-        return (value as? Bool) ?? (value as? NSNumber)?.boolValue ?? true
     }
 
     /// Reads a real sysctl string in the *host* process (the guest hooks
@@ -400,9 +419,8 @@ enum GuestStore {
         for (key, value) in HostFeature.defaultValues where dict[key] == nil {
             dict[key] = value
         }
-        // Runtime-mode / JIT defaults (see RuntimeMode / jitEnabled).
+        // Runtime-mode default (see RuntimeMode); absence means Catalyst.
         if dict["runtime"] == nil { dict["runtime"] = RuntimeMode.defaultMode.rawValue }
-        if dict["jit"] == nil { dict["jit"] = true }
         if let out = try? PropertyListSerialization.data(fromPropertyList: dict,
                                                          format: .xml,
                                                          options: 0) {

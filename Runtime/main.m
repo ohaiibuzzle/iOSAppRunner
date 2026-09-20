@@ -4,11 +4,6 @@
 //
 //  Created by Venti on 22/2/26.
 //
-//  Headless guest runtime. The unsandboxed host app spawns this executable
-//  directly (posix_spawn with argv), passing --launch-app <installName>.
-//  There is no management UI here: without a valid launch request the
-//  runtime logs and exits.
-//
 
 #import <UIKit/UIKit.h>
 #import "LCDyld.h"

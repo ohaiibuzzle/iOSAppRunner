@@ -2,17 +2,6 @@
 //  GuestSceneDelegate.swift
 //  BaseiOSApp
 //
-//  Scene delegate installed on guest bundles via the `UIApplicationSceneManifest`
-//  injected at import time by the host's GuestStore. Catalyst requires the scene
-//  lifecycle, so when a (typically non-scene) iOS guest calls `UIApplicationMain`
-//  it must still wind up inside a real `UIWindowScene`.
-//
-//  The guest's own app delegate creates its window the legacy way (an orphan
-//  `UIWindow` with no scene). Our `makeKeyAndVisible` interposition
-//  (`WindowHooks.m`) attaches that window to *this* scene, so whatever the guest
-//  added — root view controller or bare subviews — renders. This delegate just
-//  registers the scene and removes its own placeholder once a guest window shows.
-//
 
 import UIKit
 

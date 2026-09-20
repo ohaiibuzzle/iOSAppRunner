@@ -2,9 +2,6 @@
 //  DeviceSpoof.m
 //  iOSAppRunner
 //
-// Hooks `sysctl` / `sysctlbyname` so guest hardware fingerprinting sees an
-// iPad (or any other configurable device) instead of the Mac's real identity.
-//
 
 #import <sys/sysctl.h>
 #import <string.h>

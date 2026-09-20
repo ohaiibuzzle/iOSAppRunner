@@ -2,16 +2,6 @@
 //  WindowHooks.m
 //  iOSAppRunner
 //
-//  Catalyst requires a UIWindow to belong to a UIWindowScene before any of its
-//  content is presented. Legacy iOS guests build their window the classic way
-//  (`[[UIWindow alloc] initWith...]` + `makeKeyAndVisible`), which yields an
-//  orphan window with no scene — the process shows an empty window. We attach
-//  the guest's window to the real UIWindowScene so its content actually renders.
-//
-//  The scene owns one host placeholder window (created by GuestSceneDelegate)
-//  so the scene is never empty; the moment a distinctly guest window is shown,
-//  the placeholder is demoted so it can't sit blank on top of real content.
-//
 
 #import "WindowHooks.h"
 #import <objc/runtime.h>

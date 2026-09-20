@@ -176,14 +176,18 @@ enum KeychainManager {
                 // the same way Keychain.m does so the reset lands somewhere
                 // the guest will use later.
                 guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
-                    return "Could not reset keychain: \(claimedError ?? "unknown error")"
+                    let unknown = String(localized: "unknown error")
+                    return String(localized: "Could not reset keychain: \(claimedError ?? unknown)")
                 }
                 writeRegistry(registry)
                 slot = claimed
             }
-            guard let slot else { return "Could not reset keychain: unknown error" }
+            guard let slot else {
+                let unknown = String(localized: "unknown error")
+                return String(localized: "Could not reset keychain: \(unknown)")
+            }
             wipeSlotItems(slot: slot)
-            return "Reset keychain (slot \(slot))"
+            return String(localized: "Reset keychain (slot \(slot))")
         }
         return result
     }
@@ -207,7 +211,7 @@ enum KeychainManager {
 
         let highest = assignedSlots(in: registry).map(\.slot).max() ?? 0
         guard highest < maxSlotID else {
-            claimedError = "All \(maxSlotID) keychain slots are in use; delete an app to free one."
+            claimedError = String(localized: "All \(maxSlotID) keychain slots are in use; delete an app to free one.")
             return nil
         }
         let slot = highest + 1
@@ -224,7 +228,7 @@ enum KeychainManager {
         return withSlotLock { () -> String in
             var registry = readRegistry()
             guard let slot = (registry[bundleID] as? NSNumber)?.int32Value else {
-                return "No keychain slot to release"
+                return String(localized: "No keychain slot to release")
             }
 
             wipeSlotItems(slot: slot)
@@ -234,7 +238,7 @@ enum KeychainManager {
             freeList.append(NSNumber(value: slot))
             registry["free_list"] = freeList
             writeRegistry(registry)
-            return "Keychain slot \(slot) wiped and reclaimed"
+            return String(localized: "Keychain slot \(slot) wiped and reclaimed")
         }
     }
 
@@ -298,11 +302,11 @@ enum KeychainManager {
         }
 
         if enumerated > 0 {
-            return "Deleted \(enumerated) keychain item\(enumerated == 1 ? "" : "s")."
+            return String(localized: "Deleted \(enumerated) keychain items.")
         }
         if deletedSomething {
-            return "Keychain wiped."
+            return String(localized: "Keychain wiped.")
         }
-        return "No keychain items found."
+        return String(localized: "No keychain items found.")
     }
 }
