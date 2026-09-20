@@ -153,7 +153,7 @@ enum RuntimeLauncher {
             "frameX": Double(visibleFrame.origin.x),
             "frameY": Double(visibleFrame.origin.y),
             "frameWidth": Double(visibleFrame.width),
-            "frameHeight": Double(visibleFrame.height),
+            "frameHeight": Double(visibleFrame.height)
         ]
         (metrics as NSDictionary).write(to: GuestPaths.displayResolutionFile, atomically: true)
     }
@@ -175,7 +175,8 @@ enum RuntimeLauncher {
                     return launchiOS(installName: installName)
                 }
                 return LaunchOutcome(ok: false,
-                                     message: String(localized: "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets."))
+                                     message: String(localized:
+                                         "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets."))
             }
             return launchCatalyst(executable: exec, bundlePath: bundle.path, installName: installName)
         }
@@ -229,7 +230,7 @@ enum RuntimeLauncher {
     private static func launchiOSViaOpen(bundle: URL, installName: String) -> LaunchOutcome {
         // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
         // (unnotarized) bundle as damaged.
-        var _ = c_stripXattrsRecursive(bundle.path)
+        _ = c_stripXattrsRecursive(bundle.path)
 
         let (status, stderrText) = runOpen(bundlePath: bundle.path,
                                            arguments: ["--launch-app", installName, "--wait-for-host"])

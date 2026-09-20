@@ -191,6 +191,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = AB20000000000000000000D1 /* Build configuration list for PBXNativeTarget "BaseiOSAppHost" */;
 			buildPhases = (
+				AB20000000000000000000A1 /* SwiftLint */,
 				AB20000000000000000000E1 /* Sources */,
 				AB20000000000000000000C1 /* Frameworks */,
 				AB20000000000000000000F1 /* Resources */,
@@ -352,6 +353,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		AB20000000000000000000A0 /* Embed Runtimes */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -363,6 +365,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nCACHE=\"${SRCROOT}/build/runtimes\"\nBUILD_LOG=\"${CACHE}/last-build.log\"\nmkdir -p \"${DEST}\" \"${CACHE}\"\n\nbuild_runtime() {\n  local scheme=\"$1\" dest=\"$2\"\n  echo \"Building ${scheme}…\"\n  xcodebuild -project \"${SRCROOT}/iOSAppRunner.xcodeproj\" \\\n    -scheme \"${scheme}\" \\\n    -configuration \"${CONFIGURATION}\" \\\n    -destination \"${dest}\" \\\n    SYMROOT=\"${CACHE}/build\" OBJROOT=\"${CACHE}/obj\" \\\n    -allowProvisioningUpdates \\\n    build > \"${BUILD_LOG}\" 2>&1 || { cat \"${BUILD_LOG}\" >&2; exit 1; }\n}\n\n# --- Mac Catalyst runtime -------------------------------------------------\n# The Catalyst runtime is a plain macOS-platform bundle; direct exec works.\nCAT_SRC=\"${CACHE}/build/${CONFIGURATION}-maccatalyst/Runtime-Catalyst.app\"\nif [ ! -x \"${CAT_SRC}/Contents/MacOS/Runtime-Catalyst\" ]; then\n  build_runtime BaseiOSAppRuntime-Catalyst 'generic/platform=macOS,variant=Mac Catalyst'\nfi\n[ -x \"${CAT_SRC}/Contents/MacOS/Runtime-Catalyst\" ] || { echo \"error: Mac Catalyst runtime not found at ${CAT_SRC}\" >&2; exit 1; }\n\n# --- iOS runtime ----------------------------------------------------------\n# iOS-platform binaries must use the Mac-iOS wrapped layout (outer .app with\n# Wrapper/<inner>.app and a WrappedBundle symlink) and be launched through\n# LaunchServices. Building with the Designed-for-iPad destination makes\n# Xcode produce the pre-wrapped, signed bundle under .XCInstall/.\nIOS_XCINSTALL=\"${CACHE}/build/${CONFIGURATION}-iphoneos/.XCInstall/Runtime-iOS.app\"\nIOS_FLAT=\"${CACHE}/build/${CONFIGURATION}-iphoneos/Runtime-iOS.app\"\nif [ ! -x \"${IOS_XCINSTALL}/Wrapper/Runtime-iOS.app/Runtime-iOS\" ] && [ ! -x \"${IOS_FLAT}/Runtime-iOS\" ]; then\n  build_runtime BaseiOSAppRuntime-iOS 'platform=macOS,variant=Designed for iPad'\nfi\nif [ -x \"${IOS_XCINSTALL}/Wrapper/Runtime-iOS.app/Runtime-iOS\" ]; then\n  IOS_SRC=\"${IOS_XCINSTALL}\"\nelse\n  # Fallback: wrap the flat bundle by hand (same layout, no metadata).\n  [ -x \"${IOS_FLAT}/Runtime-iOS\" ] || { echo \"error: iOS runtime not found at ${IOS_FLAT}\" >&2; exit 1; }\n  IOS_SRC=\"${CACHE}/wrapped/Runtime-iOS.app\"\n  rm -rf \"${CACHE}/wrapped\"\n  mkdir -p \"${IOS_SRC}/Wrapper\"\n  cp -R \"${IOS_FLAT}\" \"${IOS_SRC}/Wrapper/\"\n  ln -s \"Wrapper/Runtime-iOS.app\" \"${IOS_SRC}/WrappedBundle\"\n  xattr -cr \"${IOS_SRC}\"\nfi\n\nrm -rf \"${DEST}/Runtime-Catalyst.app\" \"${DEST}/Runtime-iOS.app\"\ncp -R \"${CAT_SRC}\" \"${DEST}/\"\ncp -R \"${IOS_SRC}\" \"${DEST}/\"\nxattr -cr \"${DEST}/Runtime-Catalyst.app\"\necho \"Embedded runtimes into ${DEST}\"\n";
+		};
+		AB20000000000000000000A1 /* SwiftLint */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = SwiftLint;
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nif command -v swiftlint >/dev/null 2>&1; then\n\tswiftlint --quiet\nelse\n\techo \"warning: SwiftLint not installed, skipping lint (brew install swiftlint)\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -37,7 +37,7 @@ enum KeychainManager {
     private static func teamIdentifier() -> String? {
         guard let task = c_SecTaskCreateFromSelf(nil),
               let value = c_SecTaskCopyValueForEntitlement(
-                  task, "com.apple.developer.team-identifier" as CFString, nil) as? String,
+                task, "com.apple.developer.team-identifier" as CFString, nil) as? String,
               !value.isEmpty else {
             return nil
         }
@@ -150,7 +150,7 @@ enum KeychainManager {
         for cls in classes {
             var query: [String: Any] = [
                 kSecClass as String: cls,
-                kSecUseDataProtectionKeychain as String: true,
+                kSecUseDataProtectionKeychain as String: true
             ]
             if !group.isEmpty {
                 query[kSecAttrAccessGroup as String] = group
@@ -249,30 +249,50 @@ enum KeychainManager {
         let classes: [CFString] = [kSecClassGenericPassword, kSecClassInternetPassword,
                                    kSecClassCertificate, kSecClassKey]
 
-        var groups = Set<String>()
         var slots: Set<Int32> = [0]
-        let registry = readRegistry()
-        for (bundleID, slot) in assignedSlots(in: registry) {
+        for (bundleID, slot) in assignedSlots(in: readRegistry()) {
             slots.insert(slot)
             NSLog("KeychainManager: registry slot %d — %@", slot, bundleID as NSString)
         }
 
-        if let task = c_SecTaskCreateFromSelf(nil) {
-            if let team = c_SecTaskCopyValueForEntitlement(
-                task, "com.apple.developer.team-identifier" as CFString, nil) as? String {
-                let base = "\(team).\(GuestPaths.runtimeBundleID).shared"
-                for slot in slots {
-                    groups.insert(slot == 0 ? base : "\(base).\(slot)")
-                }
-            }
-            if let entitled = c_SecTaskCopyValueForEntitlement(
-                task, "keychain-access-groups" as CFString, nil) as? [Any] {
-                for group in entitled.compactMap({ $0 as? String }) {
-                    groups.insert(group)
-                }
+        let groups = collectAccessGroups(slots: slots)
+        let (enumerated, deletedSomething) = deleteItems(classes: classes, groups: groups)
+
+        if enumerated > 0 {
+            return String(localized: "Deleted \(enumerated) keychain items.")
+        }
+        if deletedSomething {
+            return String(localized: "Keychain wiped.")
+        }
+        return String(localized: "No keychain items found.")
+    }
+
+    /// The access groups that guest items can live in: the shared group of
+    /// every registered slot plus every group named in the host's own
+    /// keychain-access-groups entitlement.
+    private static func collectAccessGroups(slots: Set<Int32>) -> Set<String> {
+        var groups = Set<String>()
+        guard let task = c_SecTaskCreateFromSelf(nil) else { return groups }
+
+        if let team = c_SecTaskCopyValueForEntitlement(
+            task, "com.apple.developer.team-identifier" as CFString, nil) as? String {
+            let base = "\(team).\(GuestPaths.runtimeBundleID).shared"
+            for slot in slots {
+                groups.insert(slot == 0 ? base : "\(base).\(slot)")
             }
         }
+        if let entitled = c_SecTaskCopyValueForEntitlement(
+            task, "keychain-access-groups" as CFString, nil) as? [Any] {
+            for group in entitled.compactMap({ $0 as? String }) {
+                groups.insert(group)
+            }
+        }
+        return groups
+    }
 
+    /// Deletes every item in each class, globally and per access group.
+    /// Returns the number of items seen and whether anything was deleted.
+    private static func deleteItems(classes: [CFString], groups: Set<String>) -> (enumerated: Int, deletedSomething: Bool) {
         var enumerated = 0
         var deletedSomething = false
         for cls in classes {
@@ -281,7 +301,7 @@ enum KeychainManager {
                 kSecClass: cls,
                 kSecMatchLimit: kSecMatchLimitAll,
                 kSecReturnAttributes: true,
-                kSecUseDataProtectionKeychain: kCFBooleanTrue,
+                kSecUseDataProtectionKeychain: kCFBooleanTrue
             ]
             if SecItemCopyMatching(countQuery as CFDictionary, &out) == errSecSuccess,
                let items = out as? [[String: Any]] {
@@ -292,21 +312,12 @@ enum KeychainManager {
                               kSecUseDataProtectionKeychain: kCFBooleanTrue] as CFDictionary) == errSecSuccess {
                 deletedSomething = true
             }
-            for group in groups {
-                if SecItemDelete([kSecClass: cls,
-                                  kSecAttrAccessGroup: group,
-                                  kSecUseDataProtectionKeychain: kCFBooleanTrue] as CFDictionary) == errSecSuccess {
-                    deletedSomething = true
-                }
+            for group in groups where SecItemDelete([kSecClass: cls,
+                                                     kSecAttrAccessGroup: group,
+                                                     kSecUseDataProtectionKeychain: kCFBooleanTrue] as CFDictionary) == errSecSuccess {
+                deletedSomething = true
             }
         }
-
-        if enumerated > 0 {
-            return String(localized: "Deleted \(enumerated) keychain items.")
-        }
-        if deletedSomething {
-            return String(localized: "Keychain wiped.")
-        }
-        return String(localized: "No keychain items found.")
+        return (enumerated, deletedSomething)
     }
 }

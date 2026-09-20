@@ -22,11 +22,19 @@
 #import "Loader.h"
 
 @import MachO;
+
+// NSProcessInfo's private arguments setter, used to give the guest a clean
+// argv. Declared here so we can call it directly instead of through an
+// undeclared performSelector.
+@interface NSProcessInfo (PrivateArguments)
+- (void)setArguments:(NSArray<NSString *> *)arguments;
+@end
+
 int appMainImageIndex = 0;
 void* appExecutableHandle;
 
 static void *getAppEntryPoint(void *handle) {
-    uint32_t entryoff = 0;
+    uint64_t entryoff = 0;
     const struct mach_header_64 *header = (struct mach_header_64 *)getGuestAppHeader();
     uint8_t *imageHeaderPtr = (uint8_t*)header + sizeof(struct mach_header_64);
     struct load_command *command = (struct load_command *)imageHeaderPtr;
@@ -174,7 +182,7 @@ int main(int argc, char * argv[]) {
         [objcArgv removeObjectsInRange:NSMakeRange(launchFlagIdx, len)];
     }
     objcArgv[0] = appBundle.executablePath;
-    [NSProcessInfo.processInfo performSelector:@selector(setArguments:) withObject:objcArgv];
+    [NSProcessInfo.processInfo setArguments:objcArgv];
     NSProcessInfo.processInfo.processName = appBundle.infoDictionary[@"CFBundleExecutable"];
     *_CFGetProgname() = NSProcessInfo.processInfo.processName.UTF8String;
     Class swiftNSProcessInfo = NSClassFromString(@"_NSSwiftProcessInfo");

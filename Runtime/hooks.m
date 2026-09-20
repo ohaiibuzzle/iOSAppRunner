@@ -88,19 +88,6 @@ static void overwriteAppExecutableFileType(void) {    struct mach_header_64* app
     }
 }
 
-static inline int translateImageIndex(int origin) {
-    if(origin == lcImageIndex) {
-        if(!appExecutableFileTypeOverwritten) {
-            overwriteAppExecutableFileType();
-            appExecutableFileTypeOverwritten = true;
-        }
-        
-        return appMainImageIndex;
-    }
-    
-    return origin;
-}
-
 void* hook_dlsym(void * __handle, const char * __symbol) {
     if(__handle == (void*)RTLD_MAIN_ONLY) {
         if(strcmp(__symbol, MH_EXECUTE_SYM) == 0) {

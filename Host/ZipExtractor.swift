@@ -72,8 +72,26 @@ enum ZipExtractor {
 
     // MARK: - Central directory
 
+    /// Central-directory layout decoded from the EOCD / ZIP64 EOCD records.
+    private struct CDLayout {
+        var offset: UInt64
+        var size: UInt64
+        var entryCount: UInt64
+    }
+
     private static func readCentralDirectory(handle: FileHandle, fileSize: UInt64) throws -> [Entry] {
-        // Scan the trailing region for the End Of Central Directory record.
+        let layout = try locateCentralDirectory(handle: handle, fileSize: fileSize)
+        try handle.seek(toOffset: layout.offset)
+        let cdData = try handle.read(upToCount: Int(layout.size)) ?? Data()
+        guard UInt64(cdData.count) == layout.size else {
+            throw ZipError.corrupt("Central directory truncated")
+        }
+        return try parseCentralDirectoryEntries(cdData, count: layout.entryCount)
+    }
+
+    /// Scans the trailing region for the End Of Central Directory record and
+    /// follows the ZIP64 locator when sentinel values are present.
+    private static func locateCentralDirectory(handle: FileHandle, fileSize: UInt64) throws -> CDLayout {
         let maxComment: UInt64 = 0xFFFF
         let scanLen = min(maxComment + 22, fileSize)
         let scanStart = fileSize - scanLen
@@ -82,117 +100,146 @@ enum ZipExtractor {
 
         guard buffer.count >= 22 else { throw ZipError.notAZipFile }
 
-        var eocdOffset = -1
-        // Walk backwards looking for the 0x06054b50 signature.
-        var i = buffer.count - 22
-        while i >= 0 {
-            if buffer[i] == 0x50 && buffer[i + 1] == 0x4B &&
-               buffer[i + 2] == 0x05 && buffer[i + 3] == 0x06 {
-                eocdOffset = i
-                break
-            }
-            i -= 1
-        }
+        let eocdOffset = scanForEOCD(in: buffer)
         guard eocdOffset >= 0 else { throw ZipError.notAZipFile }
 
         let totalEntries16 = u16(buffer, eocdOffset + 10)
         let cdSize32 = u32(buffer, eocdOffset + 12)
         let cdOffset32 = u32(buffer, eocdOffset + 16)
 
-        var cdEntries = UInt64(totalEntries16)
-        var cdSize = UInt64(cdSize32)
-        var cdOffset = UInt64(cdOffset32)
+        var layout = CDLayout(offset: UInt64(cdOffset32),
+                              size: UInt64(cdSize32),
+                              entryCount: UInt64(totalEntries16))
 
         // ZIP64 path if any sentinel value is present.
         if totalEntries16 == 0xFFFF || cdSize32 == 0xFFFFFFFF || cdOffset32 == 0xFFFFFFFF {
-            let locatorPos = scanStart + UInt64(eocdOffset) - 20
-            try handle.seek(toOffset: locatorPos)
-            let locator = try handle.read(upToCount: 20) ?? Data()
-            guard locator.count == 20,
-                  locator[0] == 0x50, locator[1] == 0x4B,
-                  locator[2] == 0x06, locator[3] == 0x07 else {
-                throw ZipError.corrupt("ZIP64 locator missing")
-            }
-            let zip64EOCDOffset = u64(locator, 8)
-            try handle.seek(toOffset: zip64EOCDOffset)
-            let zip64 = try handle.read(upToCount: 56) ?? Data()
-            guard zip64.count >= 56,
-                  zip64[0] == 0x50, zip64[1] == 0x4B,
-                  zip64[2] == 0x06, zip64[3] == 0x06 else {
-                throw ZipError.corrupt("ZIP64 EOCD missing")
-            }
-            cdEntries = u64(zip64, 32)
-            cdSize = u64(zip64, 40)
-            cdOffset = u64(zip64, 48)
+            layout = try locateZIP64CentralDirectory(handle: handle,
+                                                     scanStart: scanStart,
+                                                     eocdOffset: UInt64(eocdOffset))
         }
+        return layout
+    }
 
-        try handle.seek(toOffset: cdOffset)
-        let cdData = try handle.read(upToCount: Int(cdSize)) ?? Data()
-        guard UInt64(cdData.count) == cdSize else {
-            throw ZipError.corrupt("Central directory truncated")
+    /// Walks backwards looking for the 0x06054b50 EOCD signature.
+    private static func scanForEOCD(in buffer: Data) -> Int {
+        var i = buffer.count - 22
+        while i >= 0 {
+            if buffer[i] == 0x50, buffer[i + 1] == 0x4B,
+               buffer[i + 2] == 0x05, buffer[i + 3] == 0x06 {
+                return i
+            }
+            i -= 1
         }
+        return -1
+    }
 
+    /// Reads the ZIP64 locator + ZIP64 EOCD to get the real central-directory
+    /// layout (needed for archives with >65535 entries or >4GB payloads).
+    private static func locateZIP64CentralDirectory(handle: FileHandle, scanStart: UInt64, eocdOffset: UInt64) throws -> CDLayout {
+        let locatorPos = scanStart + eocdOffset - 20
+        try handle.seek(toOffset: locatorPos)
+        let locator = try handle.read(upToCount: 20) ?? Data()
+        guard locator.count == 20,
+              locator[0] == 0x50, locator[1] == 0x4B,
+              locator[2] == 0x06, locator[3] == 0x07 else {
+            throw ZipError.corrupt("ZIP64 locator missing")
+        }
+        let zip64EOCDOffset = u64(locator, 8)
+        try handle.seek(toOffset: zip64EOCDOffset)
+        let zip64 = try handle.read(upToCount: 56) ?? Data()
+        guard zip64.count >= 56,
+              zip64[0] == 0x50, zip64[1] == 0x4B,
+              zip64[2] == 0x06, zip64[3] == 0x06 else {
+            throw ZipError.corrupt("ZIP64 EOCD missing")
+        }
+        return CDLayout(offset: u64(zip64, 48), size: u64(zip64, 40), entryCount: u64(zip64, 32))
+    }
+
+    private static func parseCentralDirectoryEntries(_ cdData: Data, count: UInt64) throws -> [Entry] {
         var entries: [Entry] = []
-        entries.reserveCapacity(Int(cdEntries))
+        entries.reserveCapacity(Int(count))
 
         var p = 0
-        for _ in 0..<cdEntries {
+        for _ in 0..<count {
             guard p + 46 <= cdData.count,
                   cdData[p] == 0x50, cdData[p + 1] == 0x4B,
                   cdData[p + 2] == 0x01, cdData[p + 3] == 0x02 else {
                 throw ZipError.corrupt("Bad central directory header")
             }
 
-            let method = u16(cdData, p + 10)
-            var compSize = UInt64(u32(cdData, p + 20))
-            var uncompSize = UInt64(u32(cdData, p + 24))
-            let nameLen = Int(u16(cdData, p + 28))
-            let extraLen = Int(u16(cdData, p + 30))
-            let commentLen = Int(u16(cdData, p + 32))
-            let externalAttr = u32(cdData, p + 38)
-            var lhOffset = UInt64(u32(cdData, p + 42))
-
-            let nameRange = (p + 46)..<(p + 46 + nameLen)
-            let nameData = cdData.subdata(in: nameRange)
-            let name = String(data: nameData, encoding: .utf8)
-                ?? String(data: nameData, encoding: .isoLatin1)
-                ?? ""
-
-            // Walk the extra-field block to pull out ZIP64 (id 0x0001) values.
-            var ep = p + 46 + nameLen
-            let extraEnd = ep + extraLen
-            while ep + 4 <= extraEnd {
-                let id = u16(cdData, ep)
-                let size = Int(u16(cdData, ep + 2))
-                let payload = ep + 4
-                if id == 0x0001 {
-                    var q = payload
-                    if uncompSize == 0xFFFFFFFF, q + 8 <= extraEnd {
-                        uncompSize = u64(cdData, q); q += 8
-                    }
-                    if compSize == 0xFFFFFFFF, q + 8 <= extraEnd {
-                        compSize = u64(cdData, q); q += 8
-                    }
-                    if lhOffset == 0xFFFFFFFF, q + 8 <= extraEnd {
-                        lhOffset = u64(cdData, q); q += 8
-                    }
-                }
-                ep = payload + size
-            }
-
-            entries.append(Entry(
-                name: name,
-                compressedSize: compSize,
-                uncompressedSize: uncompSize,
-                compressionMethod: method,
-                localHeaderOffset: lhOffset,
-                externalAttributes: externalAttr
-            ))
-
-            p = extraEnd + commentLen
+            let (entry, next) = try parseCentralDirectoryEntry(cdData, at: p)
+            entries.append(entry)
+            p = next
         }
-
         return entries
+    }
+
+    /// Parses one fixed-size central directory record; returns the entry and
+    /// the offset of the next record.
+    private static func parseCentralDirectoryEntry(_ cdData: Data, at p: Int) throws -> (entry: Entry, next: Int) {
+        let method = u16(cdData, p + 10)
+        var sizes = EntrySizes(uncompressed: UInt64(u32(cdData, p + 24)),
+                               compressed: UInt64(u32(cdData, p + 20)),
+                               localHeaderOffset: UInt64(u32(cdData, p + 42)))
+        let nameLen = Int(u16(cdData, p + 28))
+        let extraLen = Int(u16(cdData, p + 30))
+        let commentLen = Int(u16(cdData, p + 32))
+        let externalAttr = u32(cdData, p + 38)
+
+        let nameRange = (p + 46)..<(p + 46 + nameLen)
+        let nameData = cdData.subdata(in: nameRange)
+        let name = String(data: nameData, encoding: .utf8)
+            ?? String(data: nameData, encoding: .isoLatin1)
+            ?? ""
+
+        // Walk the extra-field block to pull out ZIP64 (id 0x0001) values.
+        let extraEnd = parseZIP64ExtraField(cdData, start: p + 46 + nameLen,
+                                            end: p + 46 + nameLen + extraLen,
+                                            sizes: &sizes)
+
+        let entry = Entry(
+            name: name,
+            compressedSize: sizes.compressed,
+            uncompressedSize: sizes.uncompressed,
+            compressionMethod: method,
+            localHeaderOffset: sizes.localHeaderOffset,
+            externalAttributes: externalAttr
+        )
+        return (entry, extraEnd + commentLen)
+    }
+
+    /// The three values that can be overridden by a ZIP64 extra field.
+    private struct EntrySizes {
+        var uncompressed: UInt64
+        var compressed: UInt64
+        var localHeaderOffset: UInt64
+    }
+
+    /// Walks the extra-field block at `start..<end`, replacing any 32-bit
+    /// sentinel values with their ZIP64 (id 0x0001) 64-bit counterparts.
+    /// Returns the end offset of the extra field.
+    private static func parseZIP64ExtraField(_ data: Data, start: Int, end: Int,
+                                             sizes: inout EntrySizes) -> Int {
+        var ep = start
+        while ep + 4 <= end {
+            let id = u16(data, ep)
+            let size = Int(u16(data, ep + 2))
+            let payload = ep + 4
+            if id == 0x0001 {
+                var q = payload
+                if sizes.uncompressed == 0xFFFFFFFF, q + 8 <= end {
+                    sizes.uncompressed = u64(data, q); q += 8
+                }
+                if sizes.compressed == 0xFFFFFFFF, q + 8 <= end {
+                    sizes.compressed = u64(data, q); q += 8
+                }
+                if sizes.localHeaderOffset == 0xFFFFFFFF, q + 8 <= end {
+                    sizes.localHeaderOffset = u64(data, q); q += 8
+                }
+            }
+            ep = payload + size
+        }
+        return ep
     }
 
     // MARK: - Entry extraction
