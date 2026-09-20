@@ -1,2 +1,4 @@
 App.app
 App.bundle
+build/
+.DS_Store

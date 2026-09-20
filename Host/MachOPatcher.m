@@ -42,6 +42,10 @@
 #define LC_VERSION_MIN_WATCHOS 0x30
 #endif
 
+#ifndef MH_MAGIC_64
+#define MH_MAGIC_64 0xfeedfacf
+#endif
+
 #define MP_SWAP32(x) __builtin_bswap32(x)
 
 static uint32_t encode_version(uint32_t major, uint32_t minor) {

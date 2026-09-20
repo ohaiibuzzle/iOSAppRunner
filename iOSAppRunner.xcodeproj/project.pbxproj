@@ -6,9 +6,22 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		AB7D90982F5ACECD0061186D /* convert.sh in Resources */ = {isa = PBXBuildFile; fileRef = AB7D90972F5ACECD0061186D /* convert.sh */; };
-/* End PBXBuildFile section */
+/* Begin PBXContainerItemProxy section */
+		AB20000000000000000000B1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB97C8442F4A326800D24724 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB2000000000000000000002;
+			remoteInfo = BaseiOSAppRuntimeCatalyst;
+		};
+		AB20000000000000000000B2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB97C8442F4A326800D24724 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB2000000000000000000003;
+			remoteInfo = BaseiOSAppRuntimeIOS;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		AB7D908E2F5ACEA30061186D /* CopyFiles */ = {
@@ -23,80 +36,122 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSAppRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB2000000000000000000011 /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB2000000000000000000012 /* Runtime-Catalyst.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Runtime-Catalyst.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB2000000000000000000013 /* Runtime-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Runtime-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB6A3B9A303D354E005100AD /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dylibify; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7D90972F5ACECD0061186D /* convert.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = convert.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "iOSAppRunner" target */ = {
+		AB2000000000000000000041 /* Exceptions for "litehook" folder in "BaseiOSAppRuntime-iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				.gitignore,
+				LICENSE,
+				README.md,
+				Tests/entitlements.plist,
 				Tests/main.c,
 				Tests/Makefile,
+				Tests/upload.sh,
+				upload.sh,
 			);
-			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
+			target = AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */;
 		};
-		AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "iOSAppRunner" target */ = {
+		AB2000000000000000000042 /* Exceptions for "litehook" folder in "BaseiOSAppRuntime-Catalyst" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				main.m,
+				.gitignore,
+				LICENSE,
+				README.md,
+				Tests/entitlements.plist,
+				Tests/main.c,
+				Tests/Makefile,
+				Tests/upload.sh,
+				upload.sh,
 			);
-			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
+			target = AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */;
 		};
-		AB7D90A12F5ACED50061186D /* Exceptions for "dylibify" folder in "dylibify" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				main.m,
-			);
-			target = AB7D908F2F5ACEA30061186D /* dylibify */;
-		};
-		AB97C8632F4A326A00D24724 /* Exceptions for "iOSAppRunner" folder in "iOSAppRunner" target */ = {
+		AB2000000000000000000043 /* Exceptions for "Runtime" folder in "BaseiOSAppRuntime-iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = AB97C84B2F4A326800D24724 /* iOSAppRunner */;
+			target = AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */;
+		};
+		AB2000000000000000000044 /* Exceptions for "Runtime" folder in "BaseiOSAppRuntime-Catalyst" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */;
+		};
+		AB2000000000000000000045 /* Exceptions for "Host" folder in "BaseiOSAppHost" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AB2000000000000000000001 /* BaseiOSAppHost */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AB2000000000000000000021 /* Host */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AB2000000000000000000045 /* Exceptions for "Host" folder in "BaseiOSAppHost" target */,
+			);
+			path = Host;
+			sourceTree = "<group>";
+		};
+		AB2000000000000000000022 /* Runtime */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AB2000000000000000000044 /* Exceptions for "Runtime" folder in "BaseiOSAppRuntime-Catalyst" target */,
+				AB2000000000000000000043 /* Exceptions for "Runtime" folder in "BaseiOSAppRuntime-iOS" target */,
+			);
+			path = Runtime;
+			sourceTree = "<group>";
+		};
 		AB7D90832F5AC9970061186D /* litehook */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AB7D908A2F5AC9970061186D /* Exceptions for "litehook" folder in "iOSAppRunner" target */,
+				AB2000000000000000000042 /* Exceptions for "litehook" folder in "BaseiOSAppRuntime-Catalyst" target */,
+				AB2000000000000000000041 /* Exceptions for "litehook" folder in "BaseiOSAppRuntime-iOS" target */,
 			);
 			path = litehook;
 			sourceTree = "<group>";
 		};
 		AB7D909E2F5ACED50061186D /* dylibify */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AB7D90A02F5ACED50061186D /* Exceptions for "dylibify" folder in "iOSAppRunner" target */,
-				AB7D90A12F5ACED50061186D /* Exceptions for "dylibify" folder in "dylibify" target */,
-			);
 			path = dylibify;
-			sourceTree = "<group>";
-		};
-		AB97C84E2F4A326800D24724 /* iOSAppRunner */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AB97C8632F4A326A00D24724 /* Exceptions for "iOSAppRunner" folder in "iOSAppRunner" target */,
-			);
-			path = iOSAppRunner;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		AB7D908D2F5ACEA30061186D /* Frameworks */ = {
+		AB20000000000000000000C1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB97C8492F4A326800D24724 /* Frameworks */ = {
+		AB20000000000000000000C2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB20000000000000000000C3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB7D908D2F5ACEA30061186D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -106,21 +161,103 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AB2000000000000000000031 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AB2000000000000000000011 /* BaseiOSApp.app */,
+				AB2000000000000000000012 /* Runtime-Catalyst.app */,
+				AB2000000000000000000013 /* Runtime-iOS.app */,
+				AB6A3B9A303D354E005100AD /* dylibify */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		AB97C8432F4A326800D24724 = {
 			isa = PBXGroup;
 			children = (
-				AB97C84E2F4A326800D24724 /* iOSAppRunner */,
+				AB2000000000000000000021 /* Host */,
+				AB2000000000000000000022 /* Runtime */,
 				AB7D90832F5AC9970061186D /* litehook */,
 				AB7D909E2F5ACED50061186D /* dylibify */,
 				AB7D90972F5ACECD0061186D /* convert.sh */,
-				AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */,
-				AB6A3B9A303D354E005100AD /* dylibify */,
+				AB2000000000000000000031 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AB2000000000000000000001 /* BaseiOSAppHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB20000000000000000000D1 /* Build configuration list for PBXNativeTarget "BaseiOSAppHost" */;
+			buildPhases = (
+				AB20000000000000000000E1 /* Sources */,
+				AB20000000000000000000C1 /* Frameworks */,
+				AB20000000000000000000F1 /* Resources */,
+				AB20000000000000000000A0 /* Embed Runtimes */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AB20000000000000000000B3 /* PBXTargetDependency */,
+				AB20000000000000000000B4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AB2000000000000000000021 /* Host */,
+			);
+			name = BaseiOSAppHost;
+			packageProductDependencies = (
+			);
+			productName = BaseiOSApp;
+			productReference = AB2000000000000000000011 /* BaseiOSApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB20000000000000000000D2 /* Build configuration list for PBXNativeTarget "BaseiOSAppRuntime-Catalyst" */;
+			buildPhases = (
+				AB20000000000000000000E2 /* Sources */,
+				AB20000000000000000000C2 /* Frameworks */,
+				AB20000000000000000000F2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB2000000000000000000022 /* Runtime */,
+				AB7D90832F5AC9970061186D /* litehook */,
+			);
+			name = "BaseiOSAppRuntime-Catalyst";
+			packageProductDependencies = (
+			);
+			productName = BaseiOSApp;
+			productReference = AB2000000000000000000012 /* Runtime-Catalyst.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB20000000000000000000D3 /* Build configuration list for PBXNativeTarget "BaseiOSAppRuntime-iOS" */;
+			buildPhases = (
+				AB20000000000000000000E3 /* Sources */,
+				AB20000000000000000000C3 /* Frameworks */,
+				AB20000000000000000000F3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB2000000000000000000022 /* Runtime */,
+				AB7D90832F5AC9970061186D /* litehook */,
+			);
+			name = "BaseiOSAppRuntime-iOS";
+			packageProductDependencies = (
+			);
+			productName = BaseiOSApp;
+			productReference = AB2000000000000000000013 /* Runtime-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 		AB7D908F2F5ACEA30061186D /* dylibify */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AB7D90942F5ACEA30061186D /* Build configuration list for PBXNativeTarget "dylibify" */;
@@ -133,36 +270,15 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				AB7D909E2F5ACED50061186D /* dylibify */,
+			);
 			name = dylibify;
 			packageProductDependencies = (
 			);
 			productName = dylibify;
 			productReference = AB6A3B9A303D354E005100AD /* dylibify */;
 			productType = "com.apple.product-type.tool";
-		};
-		AB97C84B2F4A326800D24724 /* iOSAppRunner */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "iOSAppRunner" */;
-			buildPhases = (
-				AB97C8482F4A326800D24724 /* Sources */,
-				AB97C8492F4A326800D24724 /* Frameworks */,
-				AB97C84A2F4A326800D24724 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				AB7D90832F5AC9970061186D /* litehook */,
-				AB7D909E2F5ACED50061186D /* dylibify */,
-				AB97C84E2F4A326800D24724 /* iOSAppRunner */,
-			);
-			name = iOSAppRunner;
-			packageProductDependencies = (
-			);
-			productName = BaseiOSApp;
-			productReference = AB44CB4B2FB5D33700798142 /* iOSAppRunner.app */;
-			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -173,11 +289,17 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
-					AB7D908F2F5ACEA30061186D = {
+					AB2000000000000000000001 = {
 						CreatedOnToolsVersion = 26.3;
 					};
-					AB97C84B2F4A326800D24724 = {
-						CreatedOnToolsVersion = 26.2;
+					AB2000000000000000000002 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					AB2000000000000000000003 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					AB7D908F2F5ACEA30061186D = {
+						CreatedOnToolsVersion = 26.3;
 					};
 				};
 			};
@@ -191,36 +313,83 @@
 			mainGroup = AB97C8432F4A326800D24724;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = AB97C8432F4A326800D24724;
+			productRefGroup = AB2000000000000000000031 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AB97C84B2F4A326800D24724 /* iOSAppRunner */,
+				AB2000000000000000000001 /* BaseiOSAppHost */,
+				AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */,
+				AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */,
 				AB7D908F2F5ACEA30061186D /* dylibify */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AB97C84A2F4A326800D24724 /* Resources */ = {
+		AB20000000000000000000F1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB7D90982F5ACECD0061186D /* convert.sh in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB20000000000000000000F2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB20000000000000000000F3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AB20000000000000000000A0 /* Embed Runtimes */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Embed Runtimes";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nCACHE=\"${SRCROOT}/build/runtimes\"\nBUILD_LOG=\"${CACHE}/last-build.log\"\nmkdir -p \"${DEST}\" \"${CACHE}\"\n\nbuild_runtime() {\n  local scheme=\"$1\" dest=\"$2\"\n  echo \"Building ${scheme}…\"\n  xcodebuild -project \"${SRCROOT}/iOSAppRunner.xcodeproj\" \\\n    -scheme \"${scheme}\" \\\n    -configuration \"${CONFIGURATION}\" \\\n    -destination \"${dest}\" \\\n    SYMROOT=\"${CACHE}/build\" OBJROOT=\"${CACHE}/obj\" \\\n    -allowProvisioningUpdates \\\n    build > \"${BUILD_LOG}\" 2>&1 || { cat \"${BUILD_LOG}\" >&2; exit 1; }\n}\n\n# --- Mac Catalyst runtime -------------------------------------------------\n# The Catalyst runtime is a plain macOS-platform bundle; direct exec works.\nCAT_SRC=\"${CACHE}/build/${CONFIGURATION}-maccatalyst/Runtime-Catalyst.app\"\nif [ ! -x \"${CAT_SRC}/Contents/MacOS/Runtime-Catalyst\" ]; then\n  build_runtime BaseiOSAppRuntime-Catalyst 'generic/platform=macOS,variant=Mac Catalyst'\nfi\n[ -x \"${CAT_SRC}/Contents/MacOS/Runtime-Catalyst\" ] || { echo \"error: Mac Catalyst runtime not found at ${CAT_SRC}\" >&2; exit 1; }\n\n# --- iOS runtime ----------------------------------------------------------\n# iOS-platform binaries must use the Mac-iOS wrapped layout (outer .app with\n# Wrapper/<inner>.app and a WrappedBundle symlink) and be launched through\n# LaunchServices. Building with the Designed-for-iPad destination makes\n# Xcode produce the pre-wrapped, signed bundle under .XCInstall/.\nIOS_XCINSTALL=\"${CACHE}/build/${CONFIGURATION}-iphoneos/.XCInstall/Runtime-iOS.app\"\nIOS_FLAT=\"${CACHE}/build/${CONFIGURATION}-iphoneos/Runtime-iOS.app\"\nif [ ! -x \"${IOS_XCINSTALL}/Wrapper/Runtime-iOS.app/Runtime-iOS\" ] && [ ! -x \"${IOS_FLAT}/Runtime-iOS\" ]; then\n  build_runtime BaseiOSAppRuntime-iOS 'platform=macOS,variant=Designed for iPad'\nfi\nif [ -x \"${IOS_XCINSTALL}/Wrapper/Runtime-iOS.app/Runtime-iOS\" ]; then\n  IOS_SRC=\"${IOS_XCINSTALL}\"\nelse\n  # Fallback: wrap the flat bundle by hand (same layout, no metadata).\n  [ -x \"${IOS_FLAT}/Runtime-iOS\" ] || { echo \"error: iOS runtime not found at ${IOS_FLAT}\" >&2; exit 1; }\n  IOS_SRC=\"${CACHE}/wrapped/Runtime-iOS.app\"\n  rm -rf \"${CACHE}/wrapped\"\n  mkdir -p \"${IOS_SRC}/Wrapper\"\n  cp -R \"${IOS_FLAT}\" \"${IOS_SRC}/Wrapper/\"\n  ln -s \"Wrapper/Runtime-iOS.app\" \"${IOS_SRC}/WrappedBundle\"\n  xattr -cr \"${IOS_SRC}\"\nfi\n\nrm -rf \"${DEST}/Runtime-Catalyst.app\" \"${DEST}/Runtime-iOS.app\"\ncp -R \"${CAT_SRC}\" \"${DEST}/\"\ncp -R \"${IOS_SRC}\" \"${DEST}/\"\nxattr -cr \"${DEST}/Runtime-Catalyst.app\"\necho \"Embedded runtimes into ${DEST}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
-		AB7D908C2F5ACEA30061186D /* Sources */ = {
+		AB20000000000000000000E1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB97C8482F4A326800D24724 /* Sources */ = {
+		AB20000000000000000000E2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB20000000000000000000E3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB7D908C2F5ACEA30061186D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -229,7 +398,565 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		AB20000000000000000000B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */;
+			targetProxy = AB20000000000000000000B1 /* PBXContainerItemProxy */;
+		};
+		AB20000000000000000000B4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */;
+			targetProxy = AB20000000000000000000B2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		AB2000000000000000000051 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = Host/Host.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = Host/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp.Host";
+				PRODUCT_NAME = BaseiOSApp;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AB2000000000000000000052 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = Host/Host.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = Host/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp.Host";
+				PRODUCT_NAME = BaseiOSApp;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AB2000000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = "Runtime/Runtime-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
+				INFOPLIST_FILE = Runtime/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
+				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UIStatusBarHidden = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
+				PRODUCT_NAME = "Runtime-iOS";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB2000000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = "Runtime/Runtime-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
+				INFOPLIST_FILE = Runtime/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
+				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UIStatusBarHidden = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
+				PRODUCT_NAME = "Runtime-iOS";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AB2000000000000000000071 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Runtime/Runtime.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
+				INFOPLIST_FILE = Runtime/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
+				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UIStatusBarHidden = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"-Xlinker",
+					"-platform_version",
+					"-Xlinker",
+					"mac-catalyst",
+					"-Xlinker",
+					15.6,
+					"-Xlinker",
+					26.0,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
+				PRODUCT_NAME = "Runtime-Catalyst";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB2000000000000000000072 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Runtime/Runtime.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PSAZVTU7XU;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
+				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
+				INFOPLIST_FILE = Runtime/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
+				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
+				INFOPLIST_KEY_GCSupportsGameMode = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
+				INFOPLIST_KEY_UIRequiresFullScreen = NO;
+				INFOPLIST_KEY_UIStatusBarHidden = NO;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"-Xlinker",
+					"-platform_version",
+					"-Xlinker",
+					"mac-catalyst",
+					"-Xlinker",
+					15.6,
+					"-Xlinker",
+					26.0,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
+				PRODUCT_NAME = "Runtime-Catalyst";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		AB7D90952F5ACEA30061186D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -251,256 +978,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-			};
-			name = Release;
-		};
-		AB97C8652F4A326A00D24724 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = iOSAppRunner/iOSAppRunner.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = PSAZVTU7XU;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
-				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
-				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
-				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
-				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
-				ENABLE_RESOURCE_ACCESS_USB = YES;
-				ENABLE_USER_SELECTED_FILES = readwrite;
-				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
-				INFOPLIST_FILE = iOSAppRunner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
-				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
-				INFOPLIST_KEY_GCSupportsGameMode = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
-				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
-				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
-				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
-				INFOPLIST_KEY_UIRequiresFullScreen = NO;
-				INFOPLIST_KEY_UIStatusBarHidden = NO;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = "";
-				"OTHER_LDFLAGS[sdk=macosx*]" = (
-					"-Xlinker",
-					"-platform_version",
-					"-Xlinker",
-					"mac-catalyst",
-					"-Xlinker",
-					15.6,
-					"-Xlinker",
-					26.0,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				REGISTER_APP_GROUPS = YES;
-				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
-				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
-				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
-				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		AB97C8662F4A326A00D24724 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = iOSAppRunner/iOSAppRunner.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = PSAZVTU7XU;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_MOVIES_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_MUSIC_FOLDER = readwrite;
-				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
-				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
-				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
-				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
-				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
-				ENABLE_RESOURCE_ACCESS_USB = YES;
-				ENABLE_USER_SELECTED_FILES = readwrite;
-				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "${SRCROOT}/litehook/external/include/";
-				INFOPLIST_FILE = iOSAppRunner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iOS App Loader";
-				INFOPLIST_KEY_GCSupportsControllerUserInteraction = YES;
-				INFOPLIST_KEY_GCSupportsGameMode = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NFCReaderUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSAppDataUsageDescription = "Needed so guests can access their data";
-				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSBluetoothWhileInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSContactsUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFallDetectionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSGKFriendListUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHandsTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSIdentityUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Guest needs it";
-				INFOPLIST_KEY_NSLocationUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMainCameraUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Guest needs it\n\n";
-				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSensorKitUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSiriUsageDescription = "The guest app is requesting for this permission.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_NSUserTrackingUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_NSVoIPUsageDescription = "Guest needs it";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "";
-				INFOPLIST_KEY_UIRequiresFullScreen = NO;
-				INFOPLIST_KEY_UIStatusBarHidden = NO;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = "";
-				"OTHER_LDFLAGS[sdk=macosx*]" = (
-					"-Xlinker",
-					"-platform_version",
-					"-Xlinker",
-					"mac-catalyst",
-					"-Xlinker",
-					15.6,
-					"-Xlinker",
-					26.0,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				REGISTER_APP_GROUPS = YES;
-				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
-				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = YES;
-				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
-				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -564,6 +1041,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SYMROOT = build;
 			};
 			name = Debug;
 		};
@@ -627,6 +1105,33 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AB20000000000000000000D1 /* Build configuration list for PBXNativeTarget "BaseiOSAppHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB2000000000000000000051 /* Debug */,
+				AB2000000000000000000052 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB20000000000000000000D2 /* Build configuration list for PBXNativeTarget "BaseiOSAppRuntime-Catalyst" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB2000000000000000000071 /* Debug */,
+				AB2000000000000000000072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB20000000000000000000D3 /* Build configuration list for PBXNativeTarget "BaseiOSAppRuntime-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB2000000000000000000061 /* Debug */,
+				AB2000000000000000000062 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		AB7D90942F5ACEA30061186D /* Build configuration list for PBXNativeTarget "dylibify" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -641,15 +1146,6 @@
 			buildConfigurations = (
 				AB97C8672F4A326A00D24724 /* Debug */,
 				AB97C8682F4A326A00D24724 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		AB97C8642F4A326A00D24724 /* Build configuration list for PBXNativeTarget "iOSAppRunner" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AB97C8652F4A326A00D24724 /* Debug */,
-				AB97C8662F4A326A00D24724 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

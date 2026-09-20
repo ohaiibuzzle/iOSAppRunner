@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-               BuildableName = "iOSAppRunner.app"
-               BlueprintName = "iOSAppRunner"
+               BlueprintIdentifier = "AB2000000000000000000002"
+               BuildableName = "Runtime-Catalyst.app"
+               BlueprintName = "BaseiOSAppRuntime-Catalyst"
                ReferencedContainer = "container:iOSAppRunner.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -31,28 +31,28 @@
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
-      debugDocumentVersioning = "YES"
+      debugDocumentVersioning = "NO"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-            BuildableName = "iOSAppRunner.app"
-            BlueprintName = "iOSAppRunner"
+            BlueprintIdentifier = "AB2000000000000000000002"
+            BuildableName = "Runtime-Catalyst.app"
+            BlueprintName = "BaseiOSAppRuntime-Catalyst"
             ReferencedContainer = "container:iOSAppRunner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -61,9 +61,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AB97C84B2F4A326800D24724"
-            BuildableName = "iOSAppRunner.app"
-            BlueprintName = "iOSAppRunner"
+            BlueprintIdentifier = "AB2000000000000000000002"
+            BuildableName = "Runtime-Catalyst.app"
+            BlueprintName = "BaseiOSAppRuntime-Catalyst"
             ReferencedContainer = "container:iOSAppRunner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

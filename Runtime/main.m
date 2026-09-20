@@ -4,6 +4,11 @@
 //
 //  Created by Venti on 22/2/26.
 //
+//  Headless guest runtime. The unsandboxed host app spawns this executable
+//  directly (posix_spawn with argv), passing --launch-app <installName>.
+//  There is no management UI here: without a valid launch request the
+//  runtime logs and exits.
+//
 
 #import <UIKit/UIKit.h>
 #import "LCDyld.h"
@@ -12,6 +17,7 @@
 #import "Keychain.h"
 #import <dlfcn.h>
 #import <stdio.h>
+#import <stdlib.h>
 #import <unistd.h>
 #import <signal.h>
 #import "Resolution.h"
@@ -19,58 +25,6 @@
 #import "WindowHooks.h"
 #import "DeviceSpoof.h"
 #import "Loader.h"
-
-static int runHostLauncher(int argc, char *argv[]) {
-    @autoreleasepool {
-        return UIApplicationMain(argc, argv, nil, @"LauncherAppDelegate");
-    }
-}
-
-// Atomically claim the oldest queued launch request written by the launcher
-static NSString *claimPendingLaunch(void) {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *pendingDir = [NSHomeDirectory() stringByAppendingPathComponent:@"pending_launch"];
-
-    NSArray<NSString *> *entries = [fm contentsOfDirectoryAtPath:pendingDir error:nil];
-    if (entries.count == 0) {
-        return nil;
-    }
-
-    // Oldest request first, so launches are honored in order.
-    NSArray<NSString *> *sorted = [entries sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
-        NSDate *da = [fm attributesOfItemAtPath:[pendingDir stringByAppendingPathComponent:a] error:nil].fileModificationDate;
-        NSDate *db = [fm attributesOfItemAtPath:[pendingDir stringByAppendingPathComponent:b] error:nil].fileModificationDate;
-        return [da compare:db];
-    }];
-
-    for (NSString *name in sorted) {
-        // Skip hidden files (including our own in-flight `.claimed-*` markers).
-        if ([name hasPrefix:@"."] || ![name.pathExtension isEqualToString:@"txt"]) {
-            continue;
-        }
-        NSString *src = [pendingDir stringByAppendingPathComponent:name];
-        NSString *dst = [pendingDir stringByAppendingPathComponent:
-                         [NSString stringWithFormat:@".claimed-%d-%@", getpid(), name]];
-        if (rename(src.fileSystemRepresentation, dst.fileSystemRepresentation) != 0) {
-            continue; // lost the race for this request; try the next one
-        }
-        NSString *bundleName = [[NSString stringWithContentsOfFile:dst encoding:NSUTF8StringEncoding error:nil]
-                                stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        unlink(dst.fileSystemRepresentation);
-        if (bundleName.length > 0) {
-            return bundleName;
-        }
-    }
-    return nil;
-}
-
-#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
-static void waitForDebugger(void) {
-    NSLog(@"[wait-for-debugger] Stopping pid %d, attach with lldb/debugserver to continue (JIT requires a debugger on device)", getpid());
-    kill(getpid(), SIGSTOP);
-    NSLog(@"[wait-for-debugger] Debugger attached, resuming");
-}
-#endif
 
 @import MachO;
 int appMainImageIndex = 0;
@@ -94,32 +48,52 @@ static void *getAppEntryPoint(void *handle) {
     return (void *)header + entryoff;
 }
 
-int main(int argc, char * argv[]) {
-    // Determine which app bundle to load. When the selection is missing or
-    // invalid, fall through to the SwiftUI launcher (LauncherAppDelegate) so the
-    // user can pick / import apps.
-    NSError *error;
-    NSString *appToLaunchPath = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
-    NSString *appBundleName = nil;
+#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
+// The LCDyld library-validation bypass (and guest JIT) only works while the
+// process carries the debugger flag, so the iOS runtime must be attached to
+// by the host before it loads any guest dylib. With --wait-for-host (passed
+// by the host for LaunchServices launches) or BASEIOSAPP_WAIT_FOR_DEBUGGER=1
+// (manual debugging), the runtime stops itself here; the host attaches
+// (task_for_pid + PT_ATTACHEXC), then detaches with SIGCONT to resume it.
+static void waitForDebugger(void) {
+    NSLog(@"[wait-for-host] Stopping pid %d, waiting for the host to attach (library-validation bypass/JIT require a debugger)", getpid());
+    kill(getpid(), SIGSTOP);
+    NSLog(@"[wait-for-host] Host attached and detached, resuming");
+}
 
-    // Claim a queued launch request.
-    appBundleName = claimPendingLaunch();
-
-    // In case we pass --launch-app (for, eg. integration with PlayCover)
-    if (appBundleName.length == 0) {
-        for (int i = 1; i + 1 < argc; i++) {
-            if (strcmp(argv[i], "--launch-app") == 0) {
-                appBundleName = [NSString stringWithUTF8String:argv[i + 1]];
-                break;
-            }
+static BOOL shouldWaitForHost(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--wait-for-host") == 0) {
+            return YES;
         }
     }
+    return getenv("BASEIOSAPP_WAIT_FOR_DEBUGGER") != NULL;
+}
+#endif
 
-    // 3. Backward-compat: fall back to app_to_launch.txt.
-    if (appBundleName.length == 0 && [[NSFileManager defaultManager] fileExistsAtPath:appToLaunchPath]) {
-        appBundleName = [NSString stringWithContentsOfFile:appToLaunchPath encoding:NSUTF8StringEncoding error:nil];
-        appBundleName = [appBundleName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+static NSString *appToLaunchFromArgv(int argc, char *argv[]) {
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--launch-app") == 0) {
+            return [NSString stringWithUTF8String:argv[i + 1]];
+        }
     }
+    return nil;
+}
+
+// Backward compatibility: a plain app_to_launch.txt request file in the
+// runtime's home (shared container Data directory).
+static NSString *appToLaunchFromFile(void) {
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        return nil;
+    }
+    NSString *name = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    name = [name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return name.length > 0 ? name : nil;
+}
+
+int main(int argc, char * argv[]) {
+    NSString *appBundleName = appToLaunchFromArgv(argc, argv) ?: appToLaunchFromFile();
 
     NSString *appBundlePath = nil;
     if (appBundleName.length > 0) {
@@ -128,16 +102,21 @@ int main(int argc, char * argv[]) {
         if ([[NSFileManager defaultManager] fileExistsAtPath:candidate isDirectory:&isDir] && isDir) {
             appBundlePath = candidate;
         } else {
-            NSLog(@"Selected app bundle missing at %@; showing launcher", candidate);
+            NSLog(@"[runtime] Requested app bundle missing at %@", candidate);
         }
     }
 
+    // Headless runtime: no selection UI. The host app is the only place a
+    // guest can be picked, imported or managed.
     if (!appBundlePath) {
-        return runHostLauncher(argc, argv);
+        NSLog(@"[runtime] No valid launch request (--launch-app <installName>); exiting");
+        return 1;
     }
 
 #if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
-    waitForDebugger();
+    if (shouldWaitForHost(argc, argv)) {
+        waitForDebugger();
+    }
 #endif
 
     NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
@@ -149,18 +128,18 @@ int main(int argc, char * argv[]) {
     KeychainSetHostBundleID(hostAppIdentifier);
     KeychainSetHostHome(hostHomeDirectory);
 
-    // Load the App.app bundle from [app sandbox data folder]/apps/[app bundle name]
+    // Load the App.app bundle from [shared container Data]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
 
     NSLog(@"%@", [NSString stringWithFormat:@"Bundle loaded %@", appBundle.bundleIdentifier]);
     init_bypassDyldLibValidation();
-    
+
     const char **path = _CFGetProcessPath();
         const char *appExecPath = appBundle.executablePath.fileSystemRepresentation;
     *path = appExecPath;
     overwriteExecPath(appExecPath);
 
-    // Create a new HOME for guest app inside the app's sandbox
+    // Create a new HOME for guest app inside the runtime's shared container
     NSString *homeDir = NSHomeDirectory();
     NSString *guestHomeDir = [homeDir stringByAppendingPathComponent:appBundle.bundleIdentifier];
     if (![[NSFileManager defaultManager] fileExistsAtPath:guestHomeDir]) {
@@ -187,12 +166,12 @@ int main(int argc, char * argv[]) {
             }
         }
     }
-    
+
     overwriteMainNSBundle(appBundle);
     overwriteMainCFBundle();
 
     NSMutableArray<NSString *> *objcArgv = NSProcessInfo.processInfo.arguments.mutableCopy;
-    // Strip the launcher's private --launch-app <name> tokens so the guest sees
+    // Strip the host's private --launch-app <name> tokens so the guest sees
     // a clean argument list.
     NSUInteger launchFlagIdx = [objcArgv indexOfObject:@"--launch-app"];
     if (launchFlagIdx != NSNotFound) {
@@ -209,9 +188,10 @@ int main(int argc, char * argv[]) {
         SEL selector = @selector(arguments);
         method_setImplementation(class_getInstanceMethod(swiftNSProcessInfo, selector), class_getMethodImplementation(NSProcessInfo.class, selector));
     }
-    
-    // Remove the indicator (so next launch we go back to the main UI)
-    [[NSFileManager defaultManager] removeItemAtPath:appToLaunchPath error: &error];
+
+    // Backward-compat request file is consumed once read.
+    [[NSFileManager defaultManager] removeItemAtPath:
+     [hostHomeDirectory stringByAppendingPathComponent:@"app_to_launch.txt"] error:nil];
 
     if (appBundle) {
         NSLog(@"Successfully loaded app bundle");
@@ -268,6 +248,5 @@ int main(int argc, char * argv[]) {
         }
     }
     NSLog(@"Failed to launch app");
-    [[NSFileManager defaultManager] removeItemAtPath:appToLaunchPath error: &error];
+    return 1;
 }
-
