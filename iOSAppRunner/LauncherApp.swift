@@ -53,6 +53,21 @@ private func c_SecTaskCopyValueForEntitlement(_ task: CFTypeRef,
                                               _ entitlement: CFString,
                                               _ error: UnsafeMutablePointer<CFError?>?) -> CFTypeRef?
 
+// Keychain slot registry (Keychain.m)
+@_silgen_name("KeychainAcquireGroupID")
+private func c_KeychainAcquireGroupID(_ bundleID: NSString,
+                                      _ outGroupID: UnsafeMutablePointer<Int32>,
+                                      _ outError: UnsafeMutablePointer<NSString?>) -> Bool
+
+@_silgen_name("KeychainReleaseGroupID")
+private func c_KeychainReleaseGroupID(_ bundleID: NSString)
+
+@_silgen_name("KeychainWipeGroupID")
+private func c_KeychainWipeGroupID(_ groupID: Int32)
+
+@_silgen_name("KeychainGroupIDForBundleID")
+private func c_KeychainGroupIDForBundleID(_ bundleID: NSString) -> NSString?
+
 // MARK: - App / Scene Delegates
 
 @objc(LauncherAppDelegate)
@@ -439,6 +454,87 @@ final class LauncherModel: ObservableObject {
         reload()
     }
 
+    /// Full guest cleanup: removes the app bundle, the guest's data directory
+    /// (Documents/Library/Caches/… created by main.m under the guest bundle
+    /// ID), any queued launch requests, and the guest's keychain slot (after
+    /// wiping its items, so the slot number can be reused safely).
+    func deleteWithCleanup(_ app: InstalledApp) {
+        let bid = app.bundleIdentifier
+        Task {
+            let summary = await Task.detached(priority: .userInitiated) {
+                Self.cleanupGuestData(bundleID: bid)
+            }.value
+            delete(app)
+            status = summary
+        }
+    }
+
+    private nonisolated static func cleanupGuestData(bundleID: String?) -> String {
+        guard let bid = bundleID, !bid.isEmpty else {
+            return "Deleted app (no data directory to clean up)"
+        }
+        let fm = FileManager.default
+
+        // 1. Keychain slot: wipe items, then reclaim the slot number.
+        c_KeychainReleaseGroupID(bid as NSString)
+
+        // 2. Guest data directory: <host home>/<guest bundle ID>.
+        let guestHome = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent(bid, isDirectory: true).path
+        var hadData = false
+        if fm.fileExists(atPath: guestHome) {
+            do {
+                try fm.removeItem(atPath: guestHome)
+                hadData = true
+            } catch {
+                return "App deleted, but failed to remove guest data: \(error.localizedDescription)"
+            }
+        }
+
+        // 3. Queued launch requests for this guest (pending_launch/<uuid>.txt
+        //    files contain the .app bundle *name*, not the bundle ID).
+        let pendingDir = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("pending_launch", isDirectory: true).path
+        if let entries = try? fm.contentsOfDirectory(atPath: pendingDir) {
+            for entry in entries where entry.hasSuffix(".txt") {
+                let url = URL(fileURLWithPath: pendingDir).appendingPathComponent(entry)
+                if let name = try? String(contentsOf: url, encoding: .utf8),
+                   name.trimmingCharacters(in: .whitespacesAndNewlines) == bid + ".app" {
+                    try? fm.removeItem(at: url)
+                }
+            }
+        }
+
+        return hadData ? "Deleted app and its data" : "Deleted app"
+    }
+
+    /// Per-app keychain reset: deletes the guest's keychain items but keeps
+    /// its slot assignment (so the next launch starts logged out, in the same
+    /// slot). No-op (with a status message) if the guest never used one.
+    func resetKeychain(for app: InstalledApp) {
+        guard let bid = app.bundleIdentifier, !bid.isEmpty else {
+            status = "No bundle ID; nothing to reset"
+            return
+        }
+        isWorking = true
+        status = "Resetting \(app.displayName) keychain…"
+        Task {
+            let summary = await Task.detached(priority: .userInitiated) {
+                var groupID: Int32 = 0
+                var error: NSString? = nil
+                let ok = c_KeychainAcquireGroupID(bid as NSString, &groupID, &error)
+                if ok {
+                    c_KeychainWipeGroupID(groupID)
+                    return "Reset \(app.displayName) keychain (slot \(groupID))"
+                }
+                let reason: String = error == nil ? "unknown error" : error! as String
+                return "Could not reset keychain: \(reason)"
+            }.value
+            isWorking = false
+            status = summary
+        }
+    }
+
     /// Launches the guest in its own native window by spawning a fresh instance
     /// of the host. The selection is passed through a queue file rather than
     /// argv: a sandboxed Catalyst app cannot pass launch arguments through
@@ -496,13 +592,27 @@ final class LauncherModel: ObservableObject {
         let classes: [CFString] = [kSecClassGenericPassword, kSecClassInternetPassword,
                                    kSecClassCertificate, kSecClassKey]
 
+        // Slot 0 is the legacy unnumbered ".shared" group; every registered
+        // guest slot comes from the registry plist in the host sandbox.
+        var slots: Set<Int32> = [0]
+        let registryPath = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("keychain_slots.plist").path
+        if let registry = NSDictionary(contentsOfFile: registryPath) as? [String: Any] {
+            for value in registry.values {
+                if let num = value as? NSNumber {
+                    slots.insert(num.int32Value)
+                }
+            }
+        }
+
         var groups = Set<String>()
         if let task = c_SecTaskCreateFromSelf(nil) {
             if let team = c_SecTaskCopyValueForEntitlement(task, "com.apple.developer.team-identifier" as CFString, nil) as? String,
                let bundleId = Bundle.main.bundleIdentifier {
-                let base = "\(team).\(bundleId).shared"
-                groups.insert(base)
-                for n in 1...127 { groups.insert("\(base).\(n)") }
+                for slot in slots {
+                    groups.insert(slot == 0 ? "\(team).\(bundleId).shared" : "\(team).\(bundleId).shared.\(slot)")
+                }
             }
             if let entitled = c_SecTaskCopyValueForEntitlement(task, "keychain-access-groups" as CFString, nil) as? [Any] {
                 for group in entitled.compactMap({ $0 as? String }) { groups.insert(group) }
@@ -704,6 +814,7 @@ struct LauncherView: View {
     @State private var pendingImport: [URL]?
     @State private var showImportSheet = false
     @State private var confirmKeychainReset = false
+    @State private var pendingKeychainResetApp: InstalledApp?
 
     var body: some View {
         NavigationView {
@@ -736,7 +847,7 @@ struct LauncherView: View {
                             }
                         }
                         .onDelete { indexSet in
-                            for index in indexSet { model.delete(model.apps[index]) }
+                            for index in indexSet { model.deleteWithCleanup(model.apps[index]) }
                         }
                     }
                 }
@@ -809,8 +920,12 @@ struct LauncherView: View {
                         compatApp = app
                         pendingApp = nil
                     }
+                    Button("Reset Keychain…") {
+                        pendingKeychainResetApp = app
+                        pendingApp = nil
+                    }
                     Button("Delete", role: .destructive) {
-                        model.delete(app)
+                        model.deleteWithCleanup(app)
                         pendingApp = nil
                     }
                     Button("Cancel", role: .cancel) { pendingApp = nil }
@@ -830,6 +945,24 @@ struct LauncherView: View {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Every keychain item stored by guest apps will be deleted.")
+            }
+            .confirmationDialog(
+                pendingKeychainResetApp.map { "Reset keychain for \($0.displayName)?" } ?? "",
+                isPresented: Binding(
+                    get: { pendingKeychainResetApp != nil },
+                    set: { if !$0 { pendingKeychainResetApp = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let app = pendingKeychainResetApp {
+                    Button("Reset Keychain", role: .destructive) {
+                        model.resetKeychain(for: app)
+                        pendingKeychainResetApp = nil
+                    }
+                    Button("Cancel", role: .cancel) { pendingKeychainResetApp = nil }
+                }
+            } message: {
+                Text("Deletes the app's keychain items (logins, sessions, tokens). The app stays installed and keeps its data.")
             }
             .alert("Error",
                    isPresented: Binding(

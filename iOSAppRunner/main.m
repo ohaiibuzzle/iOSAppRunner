@@ -141,6 +141,13 @@ int main(int argc, char * argv[]) {
 #endif
 
     NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *hostHomeDirectory = NSHomeDirectory();
+
+    // The keychain slot registry must address the host's own preferences
+    // domain and lock file; guests rewrite the bundle and HOME below, so pass
+    // both through before that happens.
+    KeychainSetHostBundleID(hostAppIdentifier);
+    KeychainSetHostHome(hostHomeDirectory);
 
     // Load the App.app bundle from [app sandbox data folder]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
