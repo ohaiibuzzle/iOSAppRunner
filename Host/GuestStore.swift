@@ -44,11 +44,10 @@ func c_machoAddRpath(_ path: UnsafePointer<CChar>,
 // MARK: - Runtime modes
 
 /// Per-app runtime selection, stored as the `runtime` key in the guest's
-/// RunnerFeatures.plist. `auto` prefers Catalyst, falling back to iOS.
+/// RunnerFeatures.plist.
 enum RuntimeMode: String {
     case catalyst
     case ios
-    case auto
 
     static let defaultMode: RuntimeMode = .catalyst
 }
@@ -372,7 +371,7 @@ extension GuestStore {
     /// One-time upgrade from the pre-split layout where both runtimes shared
     /// one bundle ID and therefore one container. Imports the keychain slot
     /// registry, then moves every installed guest into the container of its
-    /// configured runtime flavor (`auto` → Catalyst), and finally retires the
+    /// configured runtime flavor (Catalyst by default), and finally retires the
     /// emptied legacy directories. Idempotent; runs on every host startup.
     static func migrateLegacyIfNeeded() {
         KeychainManager.importLegacyAssignmentsIfNeeded()
@@ -695,6 +694,19 @@ enum GuestStore {
             return .defaultMode
         }
         return mode
+    }
+
+    /// Finds where a guest's bundle currently resides: which runtime flavor's
+    /// container holds it, and at what URL. Launch reads the configured mode
+    /// from *this* copy — never from a UI-cached URL, which goes stale the
+    /// moment a sheet-close migration moves the guest between containers.
+    static func locateInstalledGuest(installName: String) -> (flavor: RuntimeFlavor, url: URL)? {
+        let fm = FileManager.default
+        for flavor in [RuntimeFlavor.catalyst, .ios] {
+            let url = GuestPaths.appsDirectory(for: flavor).appendingPathComponent(installName)
+            if fm.fileExists(atPath: url.path) { return (flavor, url) }
+        }
+        return nil
     }
 
     /// Reads a real sysctl string in the *host* process (the guest hooks

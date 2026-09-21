@@ -46,7 +46,7 @@ struct AppRow: View {
 
     private var runtimeBadge: some View {
         let mode = model.runtimeModes[app.id] ?? .catalyst
-        return Text(mode == .ios ? String(localized: "iOS") : mode == .auto ? String(localized: "Auto") : String(localized: "Catalyst"))
+        return Text(mode == .ios ? String(localized: "iOS") : String(localized: "Catalyst"))
             .font(.caption2)
             .frame(maxWidth: .infinity) // centers within the fixed-width badge column
             .padding(.horizontal, 6)

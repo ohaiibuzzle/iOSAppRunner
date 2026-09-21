@@ -218,16 +218,15 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// Launches a guest under its configured runtime mode. The launcher
-    /// resolves the effective flavor, migrates the guest into that runtime's
-    /// container (so runtime-mode switches carry the data), claims its
-    /// keychain slot, and spawns.
+    /// Launches a guest under the runtime configured in its RunnerFeatures
+    /// plist. The launcher locates the guest's actual residence and reads the
+    /// mode from the bundle living in a container — UI-cached URLs go stale
+    /// the moment a sheet-close migration moves the guest.
     ///
     /// The whole launch runs on a background queue — the iOS path blocks in
     /// pid/state polling and `open` for seconds, which must never freeze the
     /// UI.
     func launch(_ app: InstalledApp) {
-        let mode = GuestStore.runtimeMode(for: app.url)
         let installName = app.id
         let bundleID = app.bundleIdentifier
 
@@ -235,8 +234,7 @@ final class HostModel: ObservableObject {
         status = String(localized: "Launching \(app.displayName)…")
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome = RuntimeLauncher.launch(installName: installName,
-                                                 guestBundleID: bundleID,
-                                                 mode: mode)
+                                                 guestBundleID: bundleID)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isWorking = false
@@ -305,6 +303,58 @@ final class HostModel: ObservableObject {
         GuestStore.writeRunnerFeatures(["runtime": mode.rawValue], for: app.url)
         runtimeModes[app.id] = mode
         objectWillChange.send()
+    }
+
+    /// Runs right after the Compatibility sheet closes: migrates the guest
+    /// (bundle + data + app-groups) into the container of the runtime mode
+    /// just selected. Doing this here — not at launch — keeps launch a pure
+    /// "spawn from current residence" operation: there is no window in which
+    /// a launch reads a stale, pre-migration RunnerFeatures.plist and
+    /// silently falls back to the default (Catalyst) runtime.
+    ///
+    /// Fails closed: when the guest is running and its files can't be moved,
+    /// the stored mode is reverted to the flavor of the container the guest
+    /// actually resides in, so the plist never promises a runtime the guest
+    /// can't be launched under. The error names the fix (quit the app).
+    func applyRuntimeSelection(for app: InstalledApp) {
+        let installName = app.id
+        let bundleID = app.bundleIdentifier
+        isWorking = true
+        status = String(localized: "Moving \(app.displayName) between runtime containers…")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
+                await MainActor.run { [weak self] in
+                    self?.isWorking = false
+                    self?.errorMessage = String(localized:
+                        "Could not find \(installName) in either runtime container.")
+                }
+                return
+            }
+            let mode = GuestStore.runtimeMode(for: located.url)
+            let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
+            do {
+                try GuestStore.ensureGuestResides(installName: installName,
+                                                  guestBundleID: bundleID,
+                                                  target: target)
+                await MainActor.run { [weak self] in
+                    self?.isWorking = false
+                    self?.status = String(localized:
+                        "\(app.displayName) now resides in the \(target.displayName) runtime container.")
+                    self?.reload()
+                }
+            } catch {
+                // Revert the plist to the residence flavor so it matches
+                // reality again; the user retries after quitting the app.
+                let revertMode: RuntimeMode = located.flavor == .ios ? .ios : .catalyst
+                GuestStore.writeRunnerFeatures(["runtime": revertMode.rawValue], for: located.url)
+                await MainActor.run { [weak self] in
+                    self?.isWorking = false
+                    self?.runtimeModes[installName] = revertMode
+                    self?.errorMessage = error.localizedDescription
+                    self?.reload()
+                }
+            }
+        }
     }
 
     /// String override from the guest's RunnerFeatures.plist ("" when unset).

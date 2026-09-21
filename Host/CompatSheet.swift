@@ -26,13 +26,12 @@ struct CompatSettingsView: View {
                     )) {
                         Text("Catalyst").tag(RuntimeMode.catalyst)
                         Text("iOS (Designed for iPad)").tag(RuntimeMode.ios)
-                        Text("Auto").tag(RuntimeMode.auto)
                     }
                     .pickerStyle(.radioGroup)
                 } header: {
                     Text("Runtime")
                 } footer: {
-                    Text("Data are shared between the runtimes.")
+                    Text("Closing this sheet moves the app and its data into the selected runtime's container.")
                 }
 
                 Section {

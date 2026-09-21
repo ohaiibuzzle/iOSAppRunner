@@ -188,23 +188,38 @@ enum RuntimeLauncher {
 
     // MARK: - Launch
 
-    /// Launches a guest under the runtime selected by its `runtime` mode.
-    /// `auto` prefers Catalyst and falls back to iOS.
+    /// Launches a guest under the runtime configured in its RunnerFeatures
+    /// plist. The guest's bundle is located in whichever runtime container it
+    /// currently resides in and the mode is read from *that* copy — never from
+    /// a UI-cached URL, which goes stale the moment a migration moves the
+    /// guest between containers.
     ///
-    /// Guests live in exactly one runtime container; before spawning, the
-    /// guest is migrated into the effective flavor's container
-    /// (ensureGuestResides) so flavor switches — including the silent `auto`
-    /// fallback — carry the guest's data along. The guest's keychain slot is
-    /// claimed here too and passed to the runtime: the flavors live in
-    /// separate sandbox containers, so the runtime never negotiates slots
-    /// itself anymore.
-    static func launch(installName: String, guestBundleID: String?, mode: RuntimeMode) -> LaunchOutcome {
-        NSLog("[launcher] launch %@ (guest=%@, mode=%@)", installName as NSString,
-              (guestBundleID ?? "-") as NSString, mode.rawValue as NSString)
-        let flavor = effectiveFlavor(for: mode)
-        NSLog("[launcher] effectiveFlavor=%@ container=%@",
-              flavor.displayName as NSString,
-              GuestPaths.containerDirectory(for: flavor).path as NSString)
+    /// Migration between containers happens when the Compatibility sheet
+    /// closes (HostModel.applyRuntimeSelection); the launcher never moves
+    /// guests. A residence/mode mismatch therefore means an interrupted
+    /// switch, and is refused instead of silently launching under the other
+    /// runtime (fail closed).
+    ///
+    /// The guest's keychain slot is claimed here and passed to the runtime:
+    /// the flavors live in separate sandbox containers, so the runtime never
+    /// negotiates slots itself anymore.
+    static func launch(installName: String, guestBundleID: String?) -> LaunchOutcome {
+        guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
+            return LaunchOutcome(ok: false,
+                                 message: String(localized: "\(installName) is not installed."))
+        }
+        let mode = GuestStore.runtimeMode(for: located.url)
+        let flavor: RuntimeFlavor = mode == .ios ? .ios : .catalyst
+        NSLog("[launcher] launch %@ (guest=%@, mode=%@, residence=%@)", installName as NSString,
+              (guestBundleID ?? "-") as NSString, mode.rawValue as NSString,
+              located.flavor.displayName as NSString)
+        guard located.flavor == flavor else {
+            return LaunchOutcome(ok: false, message:
+                String(localized:
+                    "\(installName) is set to the \(flavor.displayName) runtime, but its data still resides in the \(located.flavor.displayName) container.")
+                + String(localized:
+                    " Open its Compatibility Settings and close the sheet to finish the switch."))
+        }
 
         // Mac-iOS wrapped runtimes get their sandbox container from
         // containermanagerd at first LaunchServices registration — a
@@ -235,6 +250,10 @@ enum RuntimeLauncher {
         }
 
         do {
+            // Migration happens at Compatibility-sheet close; this only
+            // catches a guest stranded outside both flavor containers (a
+            // failed sheet-close migration already reverted the plist, so
+            // normally the residence above already matches).
             try GuestStore.ensureGuestResides(installName: installName,
                                               guestBundleID: guestBundleID,
                                               target: flavor)
@@ -244,8 +263,8 @@ enum RuntimeLauncher {
 
         // Refuse to double-launch: the runtime holds the guest's flock while
         // it runs, so a failed probe means an instance is live. (A guest
-        // running in the *other* container is caught earlier — the migration
-        // above refuses to move it.)
+        // running in the *other* container was refused above — a residence
+        // mismatch is never migrated here, only reported.)
         if let guestBundleID {
             let targetHome = GuestPaths.guestHome(guestBundleID, in: flavor)
             if FileManager.default.fileExists(atPath: targetHome.path),
@@ -276,17 +295,6 @@ enum RuntimeLauncher {
             return launchCatalyst(executable: exec, bundlePath: bundle.path,
                                   installName: installName, keychainSlot: slot)
         }
-    }
-
-    /// The runtime a launch will actually use: explicit `ios` always wins;
-    /// `catalyst`/`auto` prefer Catalyst and fall back to iOS when the
-    /// Catalyst runtime bundle is unavailable.
-    static func effectiveFlavor(for mode: RuntimeMode) -> RuntimeFlavor {
-        guard mode != .ios else { return .ios }
-        if let bundle = resolveBundle(.catalyst), executablePath(of: bundle) != nil {
-            return .catalyst
-        }
-        return .ios
     }
 
     /// --keychain-slot arguments for a pre-claimed slot; empty when the slot
