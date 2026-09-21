@@ -54,7 +54,6 @@
 				Tests/main.c,
 				Tests/Makefile,
 				Tests/upload.sh,
-				upload.sh,
 			);
 			target = AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */;
 		};
@@ -68,7 +67,6 @@
 				Tests/main.c,
 				Tests/Makefile,
 				Tests/upload.sh,
-				upload.sh,
 			);
 			target = AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */;
 		};
