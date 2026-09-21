@@ -126,23 +126,14 @@ struct ContentView: View {
                             .environmentObject(model)
                     }
                 }
-                // Compatibility settings sheet. Closing it (Done, Esc, or
-                // clicking outside) commits the runtime selection: the
-                // guest is migrated into the selected flavor's container
-                // right here, never at launch.
-                .sheet(isPresented: Binding(
-                    get: { model.compatSheetApp != nil },
-                    set: { newValue in
-                        if !newValue, let app = model.compatSheetApp {
-                            model.applyRuntimeSelection(for: app)
-                        }
-                        model.compatSheetApp = nil
-                    }
-                )) {
-                    if let app = model.compatSheetApp {
-                        CompatSettingsView(app: app)
-                            .environmentObject(model)
-                    }
+                // Compatibility settings sheet. Committing the runtime
+                // selection (migrating the guest into the selected flavor's
+                // container) happens in CompatSettingsView.onDisappear, which
+                // fires on every dismissal path — Done, Esc, click-outside.
+                .sheet(item: $model.compatSheetApp) { app in
+                    CompatSettingsView(app: app)
+                        .environmentObject(model)
+                        .onDisappear { model.applyRuntimeSelection(for: app) }
                 }
         }
     }

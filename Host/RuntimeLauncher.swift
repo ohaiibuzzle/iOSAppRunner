@@ -233,19 +233,16 @@ enum RuntimeLauncher {
                 return LaunchOutcome(ok: false,
                                      message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
             }
-            let iosBundleID = RuntimeFlavor.ios.bundleIdentifier
-                ?? Bundle.main.bundleIdentifier ?? ""
             // The iOS runtime spills its UUID-named container assignment via
             // a marker file (see GuestPaths.runtimeMarkerFileName). Cache is
             // validated per launch; on a cold cache, try the cheap scan,
             // then priming (register the runtime once so containermanagerd
-            // assigns a container) before placing any guest.
-            if GuestPaths.knownMacIOSContainerName(for: iosBundleID) == nil {
-                if GuestPaths.discoverMacIOSContainerName(for: iosBundleID) == nil,
-                   !primeIOSRuntimeContainer(bundleID: iosBundleID) {
-                    return LaunchOutcome(ok: false,
-                                         message: String(localized: "Could not set up the iOS runtime container; try again."))
-                }
+            // assigns a container) before touching any guest. Without this,
+            // a first-startup launch would resolve its HOME to a stale
+            // bundle-ID-named container the runtime never sees.
+            guard ensureIOSRuntimeContainer() else {
+                return LaunchOutcome(ok: false,
+                                     message: String(localized: "Could not set up the iOS runtime container; try again."))
             }
         }
 
@@ -304,6 +301,29 @@ enum RuntimeLauncher {
         guard let slot, slot > 0 else { return [] }
         return ["--keychain-slot", String(slot)]
     }
+
+    /// Ensures the iOS runtime's UUID-named sandbox container is known
+    /// before any guest is placed or launched into the iOS flavor. Cheap no-op
+    /// once the cache is warm (two stats + a tiny read); on a cold cache —
+    /// fresh host install, or the user wiped containers/Application Support —
+    /// registers the headless runtime with LaunchServices (it exits
+    /// immediately with no --launch-app, spilling its container marker on the
+    /// way) and waits for containermanagerd's assignment. Lock-serialized so
+    /// concurrent callers (startup priming, sheet-close migration, launch)
+    /// can't double-register the runtime.
+    static func ensureIOSRuntimeContainer() -> Bool {
+        let bundleID = RuntimeFlavor.ios.bundleIdentifier
+            ?? Bundle.main.bundleIdentifier ?? ""
+        guard !bundleID.isEmpty else { return false }
+        containerPrimeLock.lock()
+        defer { containerPrimeLock.unlock() }
+        if GuestPaths.knownMacIOSContainerName(for: bundleID) != nil { return true }
+        if GuestPaths.discoverMacIOSContainerName(for: bundleID) != nil { return true }
+        NSLog("[launcher] iOS runtime container unknown; priming…")
+        return primeIOSRuntimeContainer(bundleID: bundleID)
+    }
+
+    private static let containerPrimeLock = NSLock()
 
     /// Registers the iOS runtime with LaunchServices so containermanagerd
     /// assigns its UUID-named sandbox container. The headless runtime exits

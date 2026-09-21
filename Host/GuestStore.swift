@@ -271,11 +271,14 @@ enum GuestPaths {
 
 enum MigrationError: LocalizedError {
     case guestRunning(String)
+    case containerSetupFailed
 
     var errorDescription: String? {
         switch self {
         case .guestRunning(let name):
             return String(localized: "\(name) is running; quit it before switching its runtime.")
+        case .containerSetupFailed:
+            return String(localized: "Could not set up the iOS runtime container; try again.")
         }
     }
 }
@@ -705,6 +708,14 @@ enum GuestStore {
         for flavor in [RuntimeFlavor.catalyst, .ios] {
             let url = GuestPaths.appsDirectory(for: flavor).appendingPathComponent(installName)
             if fm.fileExists(atPath: url.path) { return (flavor, url) }
+        }
+        // A guest stranded in the iOS pre-discovery (bundle-ID-named)
+        // container — placed there before the runtime's UUID container was
+        // known — still counts as iOS residence; ensureIOSRuntimeContainer +
+        // ensureGuestResides relocate it at launch / sheet close.
+        if let stale = GuestPaths.staleIdentityContainerDirectory(for: .ios) {
+            let url = stale.appendingPathComponent("apps").appendingPathComponent(installName)
+            if fm.fileExists(atPath: url.path) { return (.ios, url) }
         }
         return nil
     }

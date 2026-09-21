@@ -61,6 +61,7 @@ final class HostModel: ObservableObject {
 
     func reload() {
         GuestPaths.ensureAppsDirectory()
+        primeRuntimeContainersIfNeeded()
         Task {
             let scan = await Task.detached(priority: .userInitiated) {
                 // One-time move of pre-split guests out of the legacy shared
@@ -76,6 +77,29 @@ final class HostModel: ObservableObject {
             if let sel = selection, !scan.apps.contains(where: { $0.id == sel.id }) {
                 selection = nil
             }
+        }
+    }
+
+    /// First-startup container readiness. On a wiped machine (no containers,
+    /// no Application Support) the iOS runtime's UUID-named sandbox container
+    /// doesn't exist until containermanagerd sees a LaunchServices
+    /// registration — so guests placed or migrated before that land in a
+    /// bundle-ID-named (stale) container the runtime never sees as HOME.
+    /// Registers the headless runtime once per session in the background:
+    /// with no --launch-app it exits immediately, spilling its container
+    /// marker (see RuntimeLauncher.ensureIOSRuntimeContainer). The Catalyst
+    /// container needs no registration — it is bundle-ID-named and
+    /// created by ensureAppsDirectory above.
+    private var primedContainersThisSession = false
+
+    private func primeRuntimeContainersIfNeeded() {
+        guard !primedContainersThisSession else { return }
+        primedContainersThisSession = true
+        Task.detached(priority: .utility) { [weak self] in
+            guard RuntimeLauncher.ensureIOSRuntimeContainer() else { return }
+            // The scan's view of the iOS container may predate the priming;
+            // refresh so guests placed in the stale container are found.
+            await MainActor.run { [weak self] in self?.reload() }
         }
     }
 
@@ -312,10 +336,10 @@ final class HostModel: ObservableObject {
     /// a launch reads a stale, pre-migration RunnerFeatures.plist and
     /// silently falls back to the default (Catalyst) runtime.
     ///
-    /// Fails closed: when the guest is running and its files can't be moved,
-    /// the stored mode is reverted to the flavor of the container the guest
-    /// actually resides in, so the plist never promises a runtime the guest
-    /// can't be launched under. The error names the fix (quit the app).
+    /// Fails closed: whenever the migration fails (guest running, container
+    /// setup failed, …), the stored mode is reverted to the flavor of the
+    /// container the guest actually resides in, so the plist never promises a
+    /// runtime the guest can't be launched under. The error names the fix.
     func applyRuntimeSelection(for app: InstalledApp) {
         let installName = app.id
         let bundleID = app.bundleIdentifier
@@ -333,6 +357,12 @@ final class HostModel: ObservableObject {
             let mode = GuestStore.runtimeMode(for: located.url)
             let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
             do {
+                // Prime first: without the UUID container assignment the
+                // migration below would move the guest into the stale
+                // bundle-ID-named container.
+                if target == .ios, !RuntimeLauncher.ensureIOSRuntimeContainer() {
+                    throw MigrationError.containerSetupFailed
+                }
                 try GuestStore.ensureGuestResides(installName: installName,
                                                   guestBundleID: bundleID,
                                                   target: target)
@@ -343,8 +373,9 @@ final class HostModel: ObservableObject {
                     self?.reload()
                 }
             } catch {
-                // Revert the plist to the residence flavor so it matches
-                // reality again; the user retries after quitting the app.
+                // Fail closed: revert the plist to the residence flavor so
+                // it matches reality again and the app stays launchable under
+                // its current runtime; the user retries after quitting it.
                 let revertMode: RuntimeMode = located.flavor == .ios ? .ios : .catalyst
                 GuestStore.writeRunnerFeatures(["runtime": revertMode.rawValue], for: located.url)
                 await MainActor.run { [weak self] in
