@@ -88,6 +88,14 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
+                model.killRuntimes()
+            } label: {
+                Label("Kill Runtimes", systemImage: "xmark.octagon")
+            }
+            .help("Terminate every running runtime process (stops running guests)")
+            .disabled(model.isWorking)
+
+            Button {
                 model.pickAndImportIPAs()
             } label: {
                 Label("Import IPAs", systemImage: "plus")

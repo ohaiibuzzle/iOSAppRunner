@@ -251,6 +251,26 @@ final class HostModel: ObservableObject {
         }
     }
 
+    // MARK: - Runtime control
+
+    /// Kills every running runtime process (and with it, any guests inside
+    /// them), releasing the per-guest `.guest.lock` flocks.
+    func killRuntimes() {
+        guard !isWorking else { return }
+        isWorking = true
+        status = String(localized: "Killing runtime processes…")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let killed = RuntimeLauncher.killAllRuntimes()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isWorking = false
+                self.status = killed > 0
+                    ? String(localized: "Killed \(killed) runtime process\(killed == 1 ? "" : "es")")
+                    : String(localized: "No runtime processes were running")
+            }
+        }
+    }
+
     // MARK: - Keychain
 
     /// Per-app keychain reset: deletes the guest's keychain items but keeps

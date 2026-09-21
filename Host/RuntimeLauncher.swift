@@ -540,4 +540,52 @@ enum RuntimeLauncher {
     private static func currentEnvp() -> [UnsafeMutablePointer<CChar>?] {
         ProcessInfo.processInfo.environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
     }
+
+    // MARK: - Killing runtimes
+
+    /// Terminates every running runtime process (both flavors). Each guest
+    /// runs inside its runtime process, so this also stops the guests and
+    /// releases their `.guest.lock` flocks. Returns the number of processes
+    /// signaled.
+    static func killAllRuntimes() -> Int {
+        var targets = Set<String>()
+        for flavor in [RuntimeFlavor.catalyst, RuntimeFlavor.ios] {
+            if let bundle = resolveBundle(flavor), let exec = executablePath(of: bundle) {
+                targets.insert(exec.standardizedFileURL.path)
+            }
+        }
+        guard !targets.isEmpty else { return 0 }
+
+        let count = proc_listallpids(nil, 0)
+        guard count > 0 else { return 0 }
+        var pids = [pid_t](repeating: 0, count: Int(count))
+        let listed = proc_listallpids(&pids, Int32(count) * Int32(MemoryLayout<pid_t>.size))
+        guard listed > 0 else { return 0 }
+
+        var signaled: [pid_t] = []
+        // proc_pidpath's buffer size (PROC_PIDPATHINFO_MAXSIZE = 4*MAXPATHLEN;
+        // the C macro isn't visible to Swift).
+        let pathBufferSize = 4 * Int(MAXPATHLEN)
+        for pid in pids.prefix(Int(listed)) where pid > 0 && pid != getpid() {
+            var buffer = [CChar](repeating: 0, count: pathBufferSize)
+            guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { continue }
+            guard targets.contains(String(cString: buffer)) else { continue }
+            NSLog("[launcher] killing runtime pid %d", pid)
+            kill(pid, SIGTERM)
+            signaled.append(pid)
+        }
+        let total = signaled.count
+
+        // Escalate to SIGKILL for anything that ignores SIGTERM.
+        let deadline = Date().addingTimeInterval(2)
+        while !signaled.isEmpty && Date() < deadline {
+            signaled = signaled.filter { kill($0, 0) == 0 && errno != ESRCH }
+            if !signaled.isEmpty { usleep(100 * 1000) }
+        }
+        for pid in signaled {
+            NSLog("[launcher] runtime pid %d ignored SIGTERM; sending SIGKILL", pid)
+            kill(pid, SIGKILL)
+        }
+        return total
+    }
 }
