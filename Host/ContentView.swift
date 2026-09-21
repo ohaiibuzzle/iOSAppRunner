@@ -9,10 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: HostModel
-    /// Local selection state: `List` writes its selection binding during the
-    /// view-update pass, so binding it straight to the model's `@Published`
-    /// property triggers "Publishing changes from within view updates".
-    /// Mirror it into the model (which the Guest menu reads) via `onChange`.
+    /// Mirrored into the model via onChange (a direct binding to @Published
+    /// triggers "Publishing changes from within view updates").
     @State private var selection: InstalledApp?
     /// Auto-dismisses the floating status toast once work has finished.
     @State private var toastDismissTask: Task<Void, Never>?
@@ -35,8 +33,7 @@ struct ContentView: View {
             model.selection = newValue
         }
         .onChange(of: model.apps) { _, apps in
-            // Drop a stale selection if its app vanished (e.g. deleted via
-            // the Guest menu while selected).
+            // Drop a stale selection if its app vanished.
             if let sel = selection, !apps.contains(where: { $0.id == sel.id }) {
                 selection = nil
             }
@@ -44,15 +41,14 @@ struct ContentView: View {
         .onChange(of: model.status) { _, _ in scheduleToastDismissal() }
         .animation(.snappy(duration: 0.25), value: model.isWorking)
         .onChange(of: model.isWorking) { _, _ in
-            // Working state flips without a status change (e.g. delete/launch
-            // results); reschedule the dismissal so the toast lingers briefly.
+            // Reschedule on working-state flips without a status change.
             scheduleToastDismissal()
         }
         .task { model.reload() }
     }
 
-    /// Hides the toast a few seconds after the latest activity settles.
-    /// While work is in flight the toast stays pinned to the progress.
+    /// Hides the toast a few seconds after activity settles; while work is
+    /// in flight it stays pinned to the progress.
     private func scheduleToastDismissal() {
         toastDismissTask?.cancel()
         guard !model.isWorking else { return }
@@ -126,10 +122,9 @@ struct ContentView: View {
                             .environmentObject(model)
                     }
                 }
-                // Compatibility settings sheet. Committing the runtime
-                // selection (migrating the guest into the selected flavor's
-                // container) happens in CompatSettingsView.onDisappear, which
-                // fires on every dismissal path — Done, Esc, click-outside.
+                // Committing the runtime selection (migrating the guest into
+                // the selected flavor's container) happens in onDisappear,
+                // which fires on every dismissal path.
                 .sheet(item: $model.compatSheetApp) { app in
                     CompatSettingsView(app: app)
                         .environmentObject(model)

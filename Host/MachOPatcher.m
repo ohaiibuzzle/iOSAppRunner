@@ -26,9 +26,8 @@
 #define PLATFORM_MACCATALYST 6
 #endif
 
-// Legacy version-min load commands. Older prebuilt frameworks/dylibs encode
-// their target OS with these instead of LC_BUILD_VERSION; define fallbacks in
-// case a given SDK header omits any of them.
+// Legacy version-min load commands; fallbacks in case a given SDK header
+// omits any of them.
 #ifndef LC_VERSION_MIN_MACOSX
 #define LC_VERSION_MIN_MACOSX 0x24
 #endif
@@ -59,17 +58,12 @@ static bool is_version_min_cmd(uint32_t cmd) {
            cmd == LC_VERSION_MIN_WATCHOS;
 }
 
-// Rewrites a single thin Mach-O slice so its target platform becomes
-// Mac Catalyst. Any existing LC_BUILD_VERSION is patched in place; a legacy
-// LC_VERSION_MIN_* command is converted into an LC_BUILD_VERSION (which is 8
-// bytes larger), growing the load-command region and shifting the commands
-// that follow it into the header padding that precedes the first section.
-//
-// The load commands are rebuilt in memory and written back in one shot, so no
-// section data ever moves and no other file offsets need adjusting. If the
-// slice has neither a build-version nor a version-min command (nothing we can
-// retarget), or if there isn't enough header padding to grow into, the slice
-// is left untouched and *outFoundMissing is set so the caller can warn.
+// Rewrites a thin Mach-O slice so its target platform becomes Mac Catalyst.
+// LC_BUILD_VERSION is patched in place; legacy LC_VERSION_MIN_* commands are
+// converted (growing by 8 bytes into header padding — load commands are
+// rebuilt in memory and written back in one shot, so section data never
+// moves). Slices with nothing to retarget, or without enough padding, are
+// left untouched and *outFoundMissing is set.
 static int patch_slice(int fd,
                        off_t slice_offset,
                        uint32_t platform,
@@ -119,8 +113,8 @@ static int patch_slice(int fd,
         return -1;
     }
 
-    // First pass: validate the command stream and record the lowest non-zero
-    // section file offset, which bounds how far the load commands may grow.
+    // First pass: validate commands, record the first section's file offset
+    // (bounds how far the load commands may grow).
     uint64_t minSectionOffset = UINT64_MAX;
     uint32_t off = 0;
     for (uint32_t i = 0; i < ncmds; i++) {
@@ -156,8 +150,8 @@ static int patch_slice(int fd,
         off += cmd->cmdsize;
     }
 
-    // Second pass: rebuild the load commands. Converting a version-min command
-    // grows it by 8 bytes, so allow that much slack per command in the buffer.
+    // Second pass: rebuild the commands; version-min → build-version grows
+    // 8 bytes, so allow that much slack per command.
     uint8_t *out = malloc((size_t)sizeofcmds + (size_t)ncmds * 8 + 8);
     if (!out) {
         free(lc);
@@ -173,8 +167,8 @@ static int patch_slice(int fd,
 
         if (cmd_id == LC_BUILD_VERSION &&
             cmd_sz >= sizeof(struct build_version_command)) {
-            // Preserve the existing command (including any tool entries) and
-            // only overwrite the platform/version fields.
+            // Preserve the command (incl. any tool entries); overwrite the
+            // platform/version fields.
             memcpy(out + outLen, lc + off, cmd_sz);
             struct build_version_command *dst =
                 (struct build_version_command *)(out + outLen);
@@ -213,9 +207,7 @@ static int patch_slice(int fd,
         return 0;
     }
 
-    // If the region grew, make sure it still fits before the first section's
-    // file data. This nearly always holds (binaries carry ample header
-    // padding), but refuse to write rather than clobber section content.
+    // If the region grew, it must still fit before the first section's data.
     if (outLen > sizeofcmds && minSectionOffset != UINT64_MAX &&
         (uint64_t)header_size + outLen > minSectionOffset) {
         NSLog(@"[machopatcher] not enough header padding to expand load commands "
@@ -229,8 +221,7 @@ static int patch_slice(int fd,
         return 0;
     }
 
-    // Write the rebuilt commands. When the region grew, the extra bytes land in
-    // what was previously header padding; section data is untouched.
+    // Extra bytes land in header padding; section data is untouched.
     if (pwrite(fd, out, outLen, lc_offset) != (ssize_t)outLen) {
         free(out);
         return -1;
@@ -238,8 +229,7 @@ static int patch_slice(int fd,
     free(out);
 
     if (outLen != sizeofcmds) {
-        // ncmds is unchanged (one command in, one command out); only the
-        // aggregate size grew.
+        // ncmds unchanged; only sizeofcmds grew.
         if (magic == MH_MAGIC_64) {
             struct mach_header_64 hdr;
             if (pread(fd, &hdr, sizeof(hdr), slice_offset) != sizeof(hdr)) {
@@ -333,9 +323,8 @@ int macho_set_maccatalyst_build_version(const char *path,
     return rc;
 }
 
-// Reads the filetype of the first Mach-O slice at fd, transparently stepping
-// into a fat container. Returns 0 (which is not a valid Mach-O filetype) if the
-// file is not a Mach-O we recognise.
+// Filetype of the first Mach-O slice, stepping into fat containers; 0 when
+// unrecognized.
 static uint32_t macho_first_slice_filetype(int fd) {
     uint32_t magic = 0;
     if (pread(fd, &magic, sizeof(magic), 0) != sizeof(magic)) {
@@ -392,9 +381,8 @@ int macho_is_loadable_image(const char *path) {
     }
     uint32_t filetype = macho_first_slice_filetype(fd);
     close(fd);
-    // MH_DYLIB covers frameworks and .dylibs (and the dylibified main
-    // executable); MH_BUNDLE covers loadable plug-in bundles. These are the
-    // images dyld maps and whose platform must match the host.
+    // MH_DYLIB covers frameworks/.dylibs (and the dylibified main executable);
+    // MH_BUNDLE covers loadable plug-in bundles.
     return (filetype == MH_DYLIB || filetype == MH_BUNDLE) ? 1 : 0;
 }
 
@@ -461,11 +449,8 @@ int strip_xattrs_recursive(const char *path) {
     return rc;
 }
 
-// Appends an LC_RPATH load command to a single thin Mach-O slice at
-// slice_offset, unless an identical rpath command is already present.
-// The new command is written at the end of the load-command region, growing
-// into the header padding that precedes the first section (same technique as
-// patch_slice). Returns 0 on success, -1 on failure.
+// Appends an LC_RPATH to a thin slice unless an identical one exists;
+// written after the existing commands, growing into header padding.
 static int add_rpath_to_slice(int fd, off_t slice_offset, const char *rpath) {
     uint32_t magic;
     if (pread(fd, &magic, sizeof(magic), slice_offset) != sizeof(magic)) {
@@ -508,8 +493,8 @@ static int add_rpath_to_slice(int fd, off_t slice_offset, const char *rpath) {
         return -1;
     }
 
-    // Walk the commands: find the first section's file offset (bounds how
-    // far we can grow) and check whether the rpath already exists.
+    // Find the first section's file offset (growth bound) and check for an
+    // existing identical rpath.
     uint64_t minSectionOffset = UINT64_MAX;
     bool alreadyPresent = false;
     uint32_t off = 0;
@@ -572,7 +557,7 @@ static int add_rpath_to_slice(int fd, off_t slice_offset, const char *rpath) {
         return -1;
     }
 
-    // Write the rpath command into the padding after the existing commands.
+    // Write into the padding after the existing commands.
     uint8_t *rp = calloc(1, rpathCmdSize);
     if (!rp) {
         return -1;

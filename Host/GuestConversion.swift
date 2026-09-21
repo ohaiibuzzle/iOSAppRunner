@@ -10,13 +10,9 @@ import Foundation
 /// manifests and the Mach-O retargeting done when a guest is installed.
 enum GuestConversion {
 
-    /// Writes a default `RunnerFeatures.plist` (every hook enabled, Catalyst
-    /// runtime mode, JIT on) so a freshly-imported guest behaves like a
-    /// legacy host install. The host UI edits it per-app; the runtime gates
-    /// each hook init on it via Loader.
-    ///
-    /// An existing manifest is **preserved** (defaults fill in missing keys
-    /// only), so a user's per-app toggles survive a re-import / re-convert.
+    /// Writes RunnerFeatures.plist defaults for a fresh import; an existing
+    /// manifest is preserved (defaults fill missing keys only) and
+    /// import-time features are applied on top.
     static func writeRunnerFeatures(bundleURL: URL, importFeatures: [String: Bool]) {
         let featuresURL = bundleURL.appendingPathComponent("RunnerFeatures.plist")
         var dict: [String: Any] = [:]
@@ -26,8 +22,7 @@ enum GuestConversion {
                                                                       format: nil) as? [String: Any] {
             dict = existing
         }
-        // Import-time features come from the Import sheet; they are convert-time
-        // decisions, not runtime toggles.
+        // Import-time features from the Import sheet; not runtime toggles.
         for (key, value) in importFeatures {
             dict[key] = value
         }
@@ -43,17 +38,9 @@ enum GuestConversion {
         }
     }
 
-    /// Rewrites the guest's Info.plist so UIKit can connect a scene under
-    /// Catalyst.
-    ///
-    /// Honours the per-app `scene` feature (RunnerFeatures.plist): when a
-    /// guest has `scene` disabled, the Info.plist is left byte-for-byte
-    /// untouched, so the guest runs with its own scene configuration or none
-    /// at all.
-    ///
-    /// A legacy guest with no application-role scene config is pointed at the
-    /// runtimes' `GuestSceneDelegate`; a scene-native guest keeps its own
-    /// delegate.
+    /// Rewrites the guest's Info.plist with a scene manifest so UIKit can
+    /// connect a scene under Catalyst. Skipped when the `scene` feature is
+    /// off; scene-native guests keep their own delegate.
     static func injectSceneManifest(bundleURL: URL) {
         let featuresURL = bundleURL.appendingPathComponent("RunnerFeatures.plist")
         if let featureData = try? Data(contentsOf: featuresURL),
@@ -94,15 +81,9 @@ enum GuestConversion {
         }
     }
 
-    /// Recursively walks the whole app bundle and retargets every Mach-O image
-    /// (frameworks, .dylibs, loadable bundles, and the dylibified main
-    /// executable) to Mac Catalyst, then injects the iOS-support Swift rpath.
-    ///
-    /// Images are identified by inspecting their Mach-O header rather than by
-    /// trusting the bundle layout or file extensions, so binaries dyld would
-    /// otherwise reject are caught wherever they live — Frameworks/,
-    /// PlugIns/*.appex, nested frameworks, loadable .bundles, and
-    /// extension-less helpers alike.
+    /// Retargets every Mach-O image in the bundle to Mac Catalyst and adds
+    /// the iOS-support Swift rpath. Images are found by header inspection,
+    /// not file extension.
     static func retargetAllMachOImages(bundleURL: URL) {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
@@ -129,11 +110,9 @@ enum GuestConversion {
         }
     }
 
-    // Catalyst hosts all the iOS Swift runtime overlays in the dyld cache
-    // under /System/iOSSupport/usr/lib/swift. Guest Swift frameworks link them
-    // via @rpath/libswift*.dylib, but their own rpaths don't reach that
-    // directory, so dyld can't bind them when we dlopen the guest. Add the
-    // iOS-support Swift dir as an LC_RPATH so those references resolve.
+    // Guest Swift frameworks reference the iOS Swift overlays under
+    // /System/iOSSupport/usr/lib/swift via @rpaths their own rpaths don't
+    // cover; add it as LC_RPATH so those references resolve.
     private static func injectSwiftRpath(at url: URL) {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         let rpath = "/System/iOSSupport/usr/lib/swift"

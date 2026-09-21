@@ -26,9 +26,8 @@ final class GuestSceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Hand the scene to the window hook so guest windows attach to it.
         c_SetGuestWindowScene(Unmanaged.passUnretained(windowScene).toOpaque())
 
-        // The guest's own window may have been created *before* this scene
-        // connected (scene-lifecycle race). Adopt it; only fall back to a blank
-        // placeholder if no guest window exists yet.
+        // Adopt a guest window created before the scene connected (lifecycle
+        // race); fall back to a blank placeholder otherwise.
         let adoptedRaw = c_GuestAdoptSceneLessWindows()
         if let adoptedRaw {
             let guest = Unmanaged<UIWindow>.fromOpaque(adoptedRaw).takeUnretainedValue()

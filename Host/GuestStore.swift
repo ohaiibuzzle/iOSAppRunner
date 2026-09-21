@@ -2,19 +2,11 @@
 //  GuestStore.swift
 //  BaseiOSAppHost
 //
-//  Host-side guest management: per-flavor container paths, the import-time
-//  conversion pipeline (dylibify, unquarantine, RunnerFeatures provisioning,
-//  scene-manifest injection, Catalyst build-version retarget), install into
-//  a runtime container, guest migration between the runtime containers,
-//  deletion with full data cleanup, and per-app RunnerFeatures.plist
-//  editing.
-//
-//  The two runtime flavors carry separate bundle IDs (so LaunchServices
-//  treats them as distinct apps and both can run at once), which means each
-//  has its own sandbox container. A guest lives in exactly one container:
-//  Data/apps holds its bundle, Data/<guestBundleID> its data. When its
-//  effective runtime flavor changes, the host migrates it between
-//  containers (ensureGuestResides) before launching.
+//  Host-side guest management: container paths, the import/conversion
+//  pipeline, install, cross-container migration, deletion, and the per-app
+//  RunnerFeatures.plist. The two runtime flavors have separate bundle IDs
+//  and therefore separate sandbox containers; a guest lives in exactly one
+//  (Data/apps holds its bundle, Data/<guestBundleID> its data).
 //
 
 import Darwin
@@ -43,8 +35,7 @@ func c_machoAddRpath(_ path: UnsafePointer<CChar>,
 
 // MARK: - Runtime modes
 
-/// Per-app runtime selection, stored as the `runtime` key in the guest's
-/// RunnerFeatures.plist.
+/// Per-app runtime selection (the `runtime` key in RunnerFeatures.plist).
 enum RuntimeMode: String {
     case catalyst
     case ios
@@ -67,9 +58,7 @@ enum GuestPaths {
     }
 
     /// Fallback for unexpanded/missing Info.plist keys: strip the ".Host"
-    /// suffix from the host's own bundle ID. Both flavors then resolve to the
-    /// same legacy container (degraded dev-build behavior, never the case in
-    /// normal builds).
+    /// suffix from the host's own bundle ID.
     private static var hostDerivedBaseID: String {
         let hostID = Bundle.main.bundleIdentifier ?? ""
         if hostID.hasSuffix(".Host") {
@@ -90,24 +79,16 @@ enum GuestPaths {
 
     // MARK: Containers
 
-    /// Host-owned metadata directory (the host is unsandboxed; the runtimes
-    /// never need to read it). Holds the keychain slot registry and the iOS
-    /// runtime container cache.
+    /// Host-owned metadata directory: keychain slot registry + iOS container cache.
     static var hostSupportDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("BaseiOSApp", isDirectory: true)
     }
 
     /// Sandbox container a runtime flavor sees as its NSHomeDirectory().
-    ///
-    /// Mac-iOS ("Designed for iPad") wrapped apps are the exception: at
-    /// first LaunchServices registration, containermanagerd assigns them a
-    /// stable **UUID-named** container (keyed to the app's signing
-    /// personality) — macOS-platform flavors (Catalyst) get
-    /// bundle-ID-named ones. The host learns the UUID from the runtime
-    /// itself (RuntimeLauncher primes a stopped runtime and reads HOME from
-    /// its environment), caches it below, and validates the cache against
-    /// the container's own metadata on every use (one plist read).
+    /// The iOS runtime's container is UUID-named (assigned by
+    /// containermanagerd), so its name comes from the marker cache below;
+    /// Catalyst's is bundle-ID-named.
     static func containerDirectory(for flavor: RuntimeFlavor) -> URL {
         let bundleID = flavorBundleID(flavor)
         if flavor == .ios, let name = knownMacIOSContainerName(for: bundleID) {
@@ -118,10 +99,8 @@ enum GuestPaths {
             .appendingPathComponent("Data", isDirectory: true)
     }
 
-    /// The bundle-ID-named container an iOS flavor would use before its UUID
-    /// container is known (fresh installs, or runs before discovery
-    /// existed). Guests placed there are migrated into the real container on
-    /// the next launch.
+    /// Pre-discovery bundle-ID-named iOS container; guests found here are
+    /// migrated into the real container later.
     static func staleIdentityContainerDirectory(for flavor: RuntimeFlavor) -> URL? {
         guard flavor == .ios else { return nil }
         return baseContainersDirectory.appendingPathComponent(flavorBundleID(flavor), isDirectory: true)
@@ -134,19 +113,16 @@ enum GuestPaths {
 
     // MARK: Mac-iOS container cache (runtime spill)
 
-    /// Marker the iOS runtime writes at startup: its bundle ID, inside its
-    /// own (UUID-named) container. This is how the host finds the container
-    /// back — the wrapped Mac-iOS app's container is assigned by
-    /// containermanagerd and not derivable from the bundle ID.
+    /// Marker the iOS runtime writes inside its own container (its bundle
+    /// ID) — how the host finds the UUID-named container back.
     static let runtimeMarkerFileName = ".baseiosapp-runtime"
 
     private static var iosContainerCacheFile: URL {
         hostSupportDirectory.appendingPathComponent("ios_runtime_container.txt")
     }
 
-    /// The cached UUID container name for the iOS runtime, validated against
-    /// the runtime's own marker (two stats + a tiny read — no scanning). nil
-    /// when unknown/invalid; the launcher then re-discovers or re-primes.
+    /// Cached UUID container name for the iOS runtime, validated against the
+    /// marker. nil when unknown/invalid; the launcher re-discovers or re-primes.
     static func knownMacIOSContainerName(for bundleID: String) -> String? {
         guard let raw = try? String(contentsOf: iosContainerCacheFile, encoding: .utf8) else {
             return nil
@@ -156,10 +132,7 @@ enum GuestPaths {
         return name
     }
 
-    /// Cheap targeted scan for the runtime's marker: one stat per container
-    /// directory (no plist parsing), reading only markers that exist. Used
-    /// when the cache is cold or stale — after priming, or when the runtime's
-    /// signing personality (and therefore container) changed.
+    /// Marker scan across containers, used when the cache is cold or stale.
     static func discoverMacIOSContainerName(for bundleID: String) -> String? {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(atPath: baseContainersDirectory.path) else {
@@ -195,9 +168,7 @@ enum GuestPaths {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The pre-split shared container (both runtimes used one bundle ID).
-    /// Existing guests still live here until migrateLegacyIfNeeded() moves
-    /// them into their flavor's container.
+    /// Pre-split shared container; emptied by migrateLegacyIfNeeded().
     static var legacyContainerDirectory: URL {
         let bundleID = infoString("LegacyRuntimeBundleIdentifier") ?? hostDerivedBaseID
         return baseContainersDirectory.appendingPathComponent(bundleID, isDirectory: true)
@@ -235,9 +206,9 @@ enum GuestPaths {
         containerDirectory(for: flavor).appendingPathComponent("pending_launch", isDirectory: true)
     }
 
-    /// Default residence for fresh installs (Catalyst is the preferred
-    /// flavor; ensureGuestResides moves the guest later if its runtime mode
-    /// says otherwise).
+    /// Default residence for fresh installs — no prior copy of the guest in
+    /// either container. Re-installs resolve the residence from the existing
+    /// install instead (see GuestStore.install).
     static var containerDirectory: URL { containerDirectory(for: .catalyst) }
     static var appsDirectory: URL { appsDirectory(for: .catalyst) }
 
@@ -252,10 +223,9 @@ enum GuestPaths {
 
     // MARK: Guest running lock
 
-    /// The runtime holds an exclusive flock on <guestHome>/.guest.lock for
-    /// its whole lifetime (acquireGuestLock in main.m). The host probes it
-    /// before migrating a guest between containers; flock is released by the
-    /// kernel on process death, so crashed runtimes never leave stale locks.
+    /// The runtime holds an exclusive flock on <guestHome>/.guest.lock while
+    /// running (acquireGuestLock in main.m); the host probes it before
+    /// migrating a guest. The kernel releases flock on process death.
     static func guestIsRunning(guestHome: URL) -> Bool {
         let lockPath = guestHome.appendingPathComponent(".guest.lock").path
         let fd = open(lockPath, O_RDWR | O_CREAT, 0o644)
@@ -290,12 +260,9 @@ extension GuestStore {
     }
 
     /// Makes sure the guest (bundle + data + app-groups) lives in `target`'s
-    /// container, migrating it from wherever it currently resides when
-    /// needed. Sources, most authoritative first: the iOS flavor's
-    /// bundle-ID-named container (pre-discovery location), the other
-    /// flavor's container, and the legacy pre-split container. Throws when
-    /// the guest is currently running — its runtime holds the flock and its
-    /// files cannot be moved underneath it.
+    /// container, migrating it from a source container (stale iOS, other
+    /// flavor, legacy — most authoritative first) when needed. Throws if the
+    /// guest is currently running.
     static func ensureGuestResides(installName: String,
                                    guestBundleID: String?,
                                    target: RuntimeFlavor) throws {
@@ -309,13 +276,10 @@ extension GuestStore {
         sourceDatas.append(GuestPaths.containerDirectory(for: otherFlavor(target)))
         sourceDatas.append(GuestPaths.legacyContainerDirectory)
 
-        // Guest homes are named by bundle ID; reconstruct from the install
-        // name ("com.foo.Bar.app" → "com.foo.Bar") when the host scan didn't
-        // provide one.
+        // Home directories are named by bundle ID; fall back to the install name.
         let homeName = guestBundleID ?? installName.replacingOccurrences(of: ".app", with: "")
 
-        // 1. The app bundle. A running guest's runtime holds the flock and
-        //    has its bundle's pages mapped — refuse to move under it.
+        // 1. The app bundle; refuse to move it under a running guest.
         let targetApps = targetData.appendingPathComponent("apps").appendingPathComponent(installName)
         if !fm.fileExists(atPath: targetApps.path) {
             for sourceData in sourceDatas {
@@ -331,8 +295,8 @@ extension GuestStore {
                 try fm.createDirectory(at: targetData.appendingPathComponent("apps", isDirectory: true),
                                        withIntermediateDirectories: true)
                 try moveReplacing(source: sourceApps, destination: targetApps)
-                // App-group state is per-container; move it along unless the
-                // target already has one (another guest's state lives there).
+                // Move per-container app-group state along unless the target
+                // already has one.
                 let sourceGroups = sourceData.appendingPathComponent("app-groups", isDirectory: true)
                 let targetGroups = targetData.appendingPathComponent("app-groups", isDirectory: true)
                 if fm.fileExists(atPath: sourceGroups.path), !fm.fileExists(atPath: targetGroups.path) {
@@ -342,8 +306,7 @@ extension GuestStore {
             }
         }
 
-        // 2. The guest's data directory — may trail the bundle (manual
-        //    copies, partial migrations) so it migrates independently.
+        // 2. The data directory — migrates independently (may trail the bundle).
         let targetHome = targetData.appendingPathComponent(homeName, isDirectory: true)
         if !fm.fileExists(atPath: targetHome.path) {
             for sourceData in sourceDatas {
@@ -360,9 +323,7 @@ extension GuestStore {
         }
     }
 
-    /// moveItem that tolerates leftover destination state from an earlier
-    /// partial migration (moves are atomic renames, so leftovers are the only
-    /// possible partial state).
+    /// moveItem tolerating leftover destination state from a partial migration.
     private static func moveReplacing(source: URL, destination: URL) throws {
         let fm = FileManager.default
         try? fm.removeItem(at: destination)
@@ -371,11 +332,9 @@ extension GuestStore {
 
     // MARK: - Legacy (pre-split) container upgrade
 
-    /// One-time upgrade from the pre-split layout where both runtimes shared
-    /// one bundle ID and therefore one container. Imports the keychain slot
-    /// registry, then moves every installed guest into the container of its
-    /// configured runtime flavor (Catalyst by default), and finally retires the
-    /// emptied legacy directories. Idempotent; runs on every host startup.
+    /// Idempotent upgrade from the pre-split single-container layout: import
+    /// the keychain registry, move every guest into its flavor's container,
+    /// retire the emptied legacy directories. Runs on every host startup.
     static func migrateLegacyIfNeeded() {
         KeychainManager.importLegacyAssignmentsIfNeeded()
 
@@ -391,8 +350,8 @@ extension GuestStore {
             let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
             let bundleID = readInfoPlist(at: bundleURL)?["CFBundleIdentifier"] as? String
             if fm.fileExists(atPath: GuestPaths.appsDirectory(for: target).appendingPathComponent(name).path) {
-                // Already migrated in an earlier run: the legacy copy is
-                // stale and would block legacy retirement forever.
+                // Already migrated: the legacy copy is stale and would block
+                // retirement forever.
                 try? fm.removeItem(at: bundleURL)
                 continue
             }
@@ -411,8 +370,7 @@ extension GuestStore {
         retireLegacyDirectories()
     }
 
-    /// Removes legacy directories that are now empty. Anything still holding
-    /// data (failed migrations) is left in place and retried next startup.
+    /// Removes legacy directories once empty; failed migrations retry next startup.
     private static func retireLegacyDirectories() {
         let fm = FileManager.default
         for relative in ["apps", "app-groups"] {
@@ -453,27 +411,18 @@ enum ImportError: LocalizedError {
 
 enum GuestStore {
 
-    /// Full import pipeline, run on the extracted-but-uninstalled bundle
-    /// inside scratch space (the plan: conversion happens *before* the guest
-    /// is moved into the shared container):
-    ///
+    /// Import-time conversion, run on the extracted bundle in scratch space
+    /// before it enters its container:
     ///   1. dylibify the main executable
-    ///   2. strip extended attributes recursively (unquarantine)
-    ///   3. write / merge the per-app feature manifest (RunnerFeatures.plist)
-    ///   4. inject a scene manifest for legacy apps (Catalyst needs the scene
-    ///      lifecycle; honoured per the `scene` feature flag)
-    ///   5. retarget every loadable Mach-O image to Mac Catalyst
-    ///      (11.0 / 14.0) and add the iOS-support Swift rpath
+    ///   2. recursively strip extended attributes (unquarantine)
+    ///   3. write / merge RunnerFeatures.plist
+    ///   4. inject a scene manifest for legacy apps (per the `scene` flag)
+    ///   5. retarget every loadable Mach-O to Mac Catalyst + Swift rpath
     ///
-    /// The retarget pass is applied **unconditionally**, regardless of the
-    /// app's runtime mode: Mac Catalyst bundles only load Catalyst-platform
-    /// dylibs, but iOS has no problem loading Catalyst images, so one pass
-    /// covers both runtimes and switching modes never re-converts.
-    ///
-    /// The ad-hoc codesign step from the old convert.sh is intentionally
-    /// omitted: the runtimes install hooked_mmap/hooked___fcntl (LCDyld.m),
-    /// which let dyld load unsigned binaries via anonymous RWX mappings
-    /// (permitted by `RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY`).
+    /// The retarget runs unconditionally: Catalyst only loads Catalyst
+    /// images, iOS loads those fine, so one pass serves both flavors. No
+    /// codesign step: the runtimes' LCDyld hooks let dyld load unsigned
+    /// binaries.
     static func convert(bundleURL: URL, importFeatures: [String: Bool]) throws {
         let fm = FileManager.default
 
@@ -511,38 +460,31 @@ enum GuestStore {
             throw ImportError.replaceExecutableFailed(error)
         }
 
-        // 3. Unquarantine: recursively strip com.apple.quarantine (and every
-        //    other xattr, mirroring `xattr -cr`) from the payload.
+        // 3. Unquarantine (strip all xattrs recursively).
         _ = c_stripXattrsRecursive(bundleURL.path)
 
-        // 4. Write the per-app feature manifest. `importFeatures` holds the
-        //    convert-time decisions chosen in the Import sheet (e.g. `scene`,
-        //    default OFF); the runtime hooks default ON and stay toggleable.
+        // 4. Merge the Import-sheet features into RunnerFeatures.plist.
         GuestConversion.writeRunnerFeatures(bundleURL: bundleURL, importFeatures: importFeatures)
 
-        // 5. Catalyst requires the UIKit scene lifecycle. Old iOS guests call
-        //    UIApplicationMain with the main bundle redirected to theirs, so
-        //    their Info.plist must carry a scene manifest or UIApplicationMain
-        //    aborts. Scene-native guests that already ship a manifest keep
-        //    their own delegate.
+        // 5. Legacy guests need a scene manifest or UIApplicationMain aborts
+        //    under Catalyst; scene-native guests keep their own delegate.
         GuestConversion.injectSceneManifest(bundleURL: bundleURL)
 
-        // 6. Build-version retargeting + Swift rpath for every loadable image.
-        //    One Catalyst pass serves both runtimes (iOS loads Catalyst images
-        //    fine; the iOS runtime itself is the iOS-platform binary).
+        // 6. Retarget every loadable image to Catalyst + add the Swift rpath.
         GuestConversion.retargetAllMachOImages(bundleURL: bundleURL)
     }
 
-    /// Installs an IPA: extract, convert in scratch, then move the finished
-    /// bundle into the shared container's apps directory. Returns the
-    /// installed bundle name (e.g. "com.foo.Bar.app").
+    /// Installs an IPA: extract, convert in scratch, move into the container
+    /// matching the app's runtime mode (fresh installs default to Catalyst;
+    /// re-installs keep the existing residence — a cross-container install
+    /// would strand the guest in two containers and trip the launcher's
+    /// fail-closed residence check). Returns the installed bundle name.
     static func install(from ipa: URL, importFeatures: [String: Bool]) throws -> String {
         let fm = FileManager.default
         let scratch = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
         defer { try? fm.removeItem(at: scratch) }
 
-        GuestPaths.ensureAppsDirectory()
         try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
 
         try ZipExtractor.extract(zipURL: ipa, to: scratch)
@@ -561,14 +503,49 @@ enum GuestStore {
         // back to the original folder name if the ID is missing/unusable.
         let bundleID = readInfoPlist(at: bundle)?["CFBundleIdentifier"] as? String
         let installName = sanitizedInstallName(bundleID) ?? bundle.lastPathComponent
-        let destination = GuestPaths.appsDirectory.appendingPathComponent(installName)
-        if fm.fileExists(atPath: destination.path) {
-            try fm.removeItem(at: destination)
+
+        // Residence: existing install's container; Catalyst for fresh installs.
+        let previous = locateInstalledGuest(installName: installName)
+        let target: RuntimeFlavor = previous.map {
+            runtimeMode(for: $0.url) == .ios ? RuntimeFlavor.ios : .catalyst
+        } ?? .catalyst
+
+        // Carry the previous manifest over so settings survive the reinstall.
+        if let previous,
+           let data = try? Data(contentsOf: previous.url.appendingPathComponent("RunnerFeatures.plist")) {
+            try? data.write(to: bundle.appendingPathComponent("RunnerFeatures.plist"))
+        }
+
+        // Prime the iOS UUID container first or the bundle lands in the
+        // stale bundle-ID-named one.
+        if target == .ios {
+            guard RuntimeLauncher.ensureIOSRuntimeContainer() else {
+                throw MigrationError.containerSetupFailed
+            }
+        }
+        GuestPaths.ensureAppsDirectory(for: target)
+
+        // Replace: drop every copy of this bundle (a guest lives in exactly
+        // one container; a second copy is residue). Refuse while running.
+        let homeName = bundleID ?? installName.replacingOccurrences(of: ".app", with: "")
+        for flavor in [RuntimeFlavor.catalyst, .ios] {
+            let copyURL = GuestPaths.appsDirectory(for: flavor).appendingPathComponent(installName)
+            guard fm.fileExists(atPath: copyURL.path) else { continue }
+            let home = GuestPaths.guestHome(homeName, in: flavor)
+            if fm.fileExists(atPath: home.path), GuestPaths.guestIsRunning(guestHome: home) {
+                throw MigrationError.guestRunning(homeName)
+            }
+            try fm.removeItem(at: copyURL)
+        }
+        // And any copy in the pre-discovery (bundle-ID-named) iOS container.
+        if let stale = GuestPaths.staleIdentityContainerDirectory(for: .ios) {
+            try? fm.removeItem(at: stale.appendingPathComponent("apps").appendingPathComponent(installName))
         }
 
         // Convert *before* the bundle enters the container.
         try convert(bundleURL: bundle, importFeatures: importFeatures)
 
+        let destination = GuestPaths.appsDirectory(for: target).appendingPathComponent(installName)
         try fm.moveItem(at: bundle, to: destination)
         return installName
     }
@@ -583,11 +560,9 @@ enum GuestStore {
         return name.isEmpty ? nil : "\(name).app"
     }
 
-    /// Full guest cleanup: wipes + reclaims the guest's keychain slot, removes
-    /// the guest's data directory from every runtime container (data may
-    /// exist in either after runtime-mode switches), and clears any legacy
-    /// queued-launch artifacts so nothing can resurrect the app under the
-    /// headless runtimes. Returns a user-presentable summary.
+    /// Full guest cleanup: wipe + reclaim the keychain slot, remove guest
+    /// data from every container, clear legacy launch artifacts. Returns a
+    /// user-presentable summary.
     static func deleteWithCleanup(bundleID: String?, appURL: URL) -> String {
         var summary: String?
 
@@ -621,8 +596,7 @@ enum GuestStore {
                     }
                 }
             }
-            // And the pre-split shared container, for guests that never
-            // launched after the upgrade.
+            // And the pre-split shared container.
             let legacyHome = GuestPaths.legacyContainerDirectory.appendingPathComponent(bid, isDirectory: true).path
             try? FileManager.default.removeItem(atPath: legacyHome)
         }
@@ -662,16 +636,13 @@ enum GuestStore {
         }
     }
 
-    /// Features that guests require to function at all; never user-disableable.
-    /// Forced back to `true` whenever a manifest says otherwise (e.g. toggled
-    /// off before these became mandatory).
+    /// Features guests require to function at all; never user-disableable.
     static let requiredFeatures: [String: Bool] = [
         "keychain": true,
         "groupContainer": true
     ]
 
-    /// Rewrites a guest's RunnerFeatures.plist so every required feature is
-    /// enabled. No-op when the manifest already complies.
+    /// Re-enables required features in a guest's manifest; no-op when compliant.
     static func enforceRequiredFeatures(for appURL: URL) {
         guard let plist = readRunnerFeatures(for: appURL) else { return }
         var changed = false
@@ -699,20 +670,16 @@ enum GuestStore {
         return mode
     }
 
-    /// Finds where a guest's bundle currently resides: which runtime flavor's
-    /// container holds it, and at what URL. Launch reads the configured mode
-    /// from *this* copy — never from a UI-cached URL, which goes stale the
-    /// moment a sheet-close migration moves the guest between containers.
+    /// Locates a guest's bundle (flavor + URL). Launch reads the configured
+    /// mode from this copy, never a UI-cached URL.
     static func locateInstalledGuest(installName: String) -> (flavor: RuntimeFlavor, url: URL)? {
         let fm = FileManager.default
         for flavor in [RuntimeFlavor.catalyst, .ios] {
             let url = GuestPaths.appsDirectory(for: flavor).appendingPathComponent(installName)
             if fm.fileExists(atPath: url.path) { return (flavor, url) }
         }
-        // A guest stranded in the iOS pre-discovery (bundle-ID-named)
-        // container — placed there before the runtime's UUID container was
-        // known — still counts as iOS residence; ensureIOSRuntimeContainer +
-        // ensureGuestResides relocate it at launch / sheet close.
+        // Guests stranded in the pre-discovery bundle-ID-named iOS container
+        // still count as iOS residence.
         if let stale = GuestPaths.staleIdentityContainerDirectory(for: .ios) {
             let url = stale.appendingPathComponent("apps").appendingPathComponent(installName)
             if fm.fileExists(atPath: url.path) { return (.ios, url) }
@@ -720,10 +687,7 @@ enum GuestStore {
         return nil
     }
 
-    /// Reads a real sysctl string in the *host* process (the guest hooks
-    /// never run here, so this always returns the true hardware value). Used
-    /// to show the unspoofed identity as the hint in the compatibility text
-    /// fields.
+    /// Real (unspoofed) sysctl string, for the Compat-sheet field hints.
     static func realSysctlValue(_ name: String) -> String? {
         var size: size_t = 0
         guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }

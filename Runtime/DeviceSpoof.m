@@ -9,9 +9,8 @@
 #import "hooks.h"
 #import "Loader.h"
 
-// Capture the real libsystem_kernel implementations at image-load time —
-// before any litehook rebind patches the GOTs — so the hooks can forward
-// unspoofed queries (same trick as hooks.m's `orig_dlsym`).
+// Capture the real libsystem_kernel implementations before any litehook
+// rebind patches the GOTs, so hooks can forward unspoofed queries.
 static int (*real_sysctl)(int *, u_int, void *, size_t *, void *, size_t) = sysctl;
 static int (*real_sysctlbyname)(const char *, void *, size_t *, void *, size_t) = sysctlbyname;
 
@@ -24,8 +23,7 @@ static NSString *gSpoofedOSVersion; // "kern.osproductversion" (optional)
 static const char *FallbackMachine = "iPad14,6";
 
 /// Standard sysctl copy-out semantics for a string value: report the needed
-/// size when oldp is NULL; otherwise copy (truncating to the caller's buffer)
-/// including the NUL terminator when there is room.
+/// size when oldp is NULL; otherwise copy (truncating) with NUL terminator.
 static int CopySpoofValue(const char *value, void *oldp, size_t *oldlenp) {
     if (!value) {
         value = FallbackMachine;
@@ -47,9 +45,8 @@ static int CopySpoofValue(const char *value, void *oldp, size_t *oldlenp) {
     return 0;
 }
 
-/// On real iPads the MIB `HW_MACHINE` reports the device family ("iPad")
-/// while `hw.machine` reports the exact model ("iPad14,6"). Derive the family
-/// from the configured machine name (everything before the first comma).
+/// On real iPads HW_MACHINE reports the family ("iPad") while hw.machine
+/// reports the exact model; derive the family from the machine name.
 static NSString *SpoofedMachineFamily(void) {
     NSString *machine = gSpoofedMachine;
     if (machine.length == 0) {

@@ -52,42 +52,28 @@ NSString* getTeamIdentifier(void) {
 
 #pragma mark - Access-group slot registry
 
-// Forward declarations (Keychain.h is not imported here to keep the hook file
-// self-contained; the launcher reaches these via @_silgen_name).
+// Forward declarations (Keychain.h is not imported here; the launcher reaches
+// these via @_silgen_name).
 void KeychainWipeGroupID(int groupID);
 NSNumber* KeychainGroupIDForBundleID(NSString* bundleID);
 
-// Every guest gets a numbered keychain access group
-// "<teamID>.<hostBundleID>.shared[.N]" (N in 1...MAX_KEYCHAIN_GROUP_ID), which
-// effectively partitions the host's keychain into one private slot per guest.
+// Every guest gets a numbered access group "<teamID>.<base>.shared[.N]" —
+// one private keychain slot per guest. Assignments live in a registry plist
+// at a fixed host-sandbox path (guests redirect HOME and rewrite the main
+// bundle before touching defaults, so standardUserDefaults would diverge per
+// process):
 //
-// The launcher spawns one runner process per guest window, and each guest
-// overwrites the main bundle and redirects HOME before touching defaults — so
-// slot state cannot live in standardUserDefaults (every process would see a
-// different domain). Instead the allocation lives in a single registry
-// dictionary stored in a fixed file inside the host sandbox:
+//   "<guest bundle ID>": <slot number>   // permanent assignment
+//   "free_list": [ <slot numbers> ]      // reclaimed, reusable slots
 //
-//   "registry" = {
-//       "<guest bundle ID>": <slot number>,   // permanent assignment
-//       "free_list": [ <slot numbers> ]       // reclaimed, reusable slots
-//   }
-//
-// A slot stays bound to its bundle ID across relaunches *and* reinstalls (so
-// logins survive), and only re-enters the free list after its items were
-// deleted and the guest was removed.
-//
-// MAX_KEYCHAIN_GROUP_ID must match the numbered keychain-access-groups
-// declared in iOSAppRunner.entitlements.
+// MAX_KEYCHAIN_GROUP_ID must match the numbered keychain-access-groups in
+// iOSAppRunner.entitlements.
 static const int MAX_KEYCHAIN_GROUP_ID = 127;
 
-// The keychain access-group base, captured before guests rewrite the main
-// bundle. Used to build access-group names for wipes (guests cannot rely on
-// NSBundle). Now carries the KeychainAccessGroupBase Info.plist value rather
-// than the runtime's own bundle ID, so both runtime flavors resolve the same
-// groups.
+// Access-group base (Info.plist KeychainAccessGroupBase), captured before
+// guests rewrite the main bundle; shared by both runtime flavors.
 static NSString* keychainHostAppID = nil;
-// The host sandbox home, captured before guests redirect HOME. Anchors both
-// the registry plist and the cross-process lock file.
+// Host sandbox home, captured before guests redirect HOME.
 static NSString* keychainHostHome = nil;
 
 void KeychainSetHostBundleID(NSString* hostBundleID) {
@@ -96,8 +82,7 @@ void KeychainSetHostBundleID(NSString* hostBundleID) {
     }
 }
 
-// Slot number pre-assigned by the host and passed via --keychain-slot. -1
-// until set; KeychainAcquireGroupID short-circuits to it when >= 0.
+// Host pre-assigned slot via --keychain-slot; -1 until set.
 static int assignedSlotOverride = -1;
 
 void KeychainSetAssignedSlot(int slotNumber) {
@@ -106,9 +91,9 @@ void KeychainSetAssignedSlot(int slotNumber) {
     }
 }
 
-// The host sandbox home. Guests redirect HOME before hooks run, so main.m
-// hands us the real sandbox home for lock-file placement; the launcher process
-// never redirects HOME, so NSHomeDirectory() is the correct fallback there.
+// main.m hands us the real sandbox home (guests redirect HOME before hooks
+// run); the launcher never redirects HOME, so NSHomeDirectory() is a valid
+// fallback there.
 void KeychainSetHostHome(NSString* hostHomePath) {
     if (keychainHostHome == nil && hostHomePath.length > 0) {
         keychainHostHome = [hostHomePath copy];
@@ -128,15 +113,10 @@ static NSLock* keychainRegistryLock(void) {
     return lock;
 }
 
-// Cross-process mutex for the registry: the launcher spawns concurrent runner
-// instances (open -n), and two guests claiming their first slot at the same
-// moment must not read the same free slot. Uses O_CREAT|O_EXCL, breaking locks
-// older than 10 seconds (crashed holders) and giving up after 10 seconds.
+// Cross-process mutex for the registry: O_CREAT|O_EXCL, stale locks older
+// than 10s broken, 10s timeout.
 static NSString* slotLockPath(void) {
-    // Guests redirect HOME, but the lock file only needs to be inside the host
-    // sandbox; the launcher and guest-hosting instances share the container.
-    // NSHomeDirectory() in the launcher is the host home; in guests it may
-    // already be the guest home, so prefer the explicit value when set.
+    // Prefer the captured host home; guests may have redirected HOME already.
     NSString* base = keychainHostHome ?: NSHomeDirectory();
     return [base stringByAppendingPathComponent:@".keychain_slots.lock"];
 }
@@ -172,11 +152,9 @@ static void releaseSlotLock(int fd) {
     unlink(slotLockPath().fileSystemRepresentation);
 }
 
-// The registry lives in a plain plist file (NOT CFPreferences): guests have
-// HOME/CFFIXED_USER_HOME redirected before any hook runs, so cfprefsd would
-// resolve the host's preferences domain to a path inside the guest home and
-// the launcher/guest views of the registry would silently diverge. A direct
-// file at a fixed host-sandbox path is seen identically by every process.
+// A plain plist, NOT CFPreferences: guests redirect HOME before hooks run,
+// so cfprefsd would resolve the host's preferences domain to a path inside
+// the guest home and host/guest views would silently diverge.
 static NSString* slotRegistryPath(void) {
     NSString* base = keychainHostHome ?: NSHomeDirectory();
     return [base stringByAppendingPathComponent:@"Library/keychain_slots.plist"];
@@ -202,10 +180,7 @@ static void saveRegistry(CFMutableDictionaryRef registry) {
 }
 
 // One-time migration from the old counter scheme, which stored a per-guest
-// "<bundleID>_group_id" integer in the guest's own preferences plist (guest
-// home domains were per-guest, so this file is the only place it can be).
-// Carries the legacy assignment into the registry so existing guests keep
-// their numbers and their items keep working.
+// "<bundleID>_group_id" integer in the guest's own preferences plist.
 static int readLegacySlotNumber(NSString* guestBundleID) {
     NSString* legacyPath = [NSString stringWithFormat:@"%@/%@/Library/Preferences/%@.plist",
                             keychainHostHome ?: NSHomeDirectory(), guestBundleID, guestBundleID];
@@ -221,8 +196,7 @@ static void migrateLegacySlotIfNeeded(NSString* guestBundleID, CFMutableDictiona
     int legacy = readLegacySlotNumber(guestBundleID);
     if (legacy == 0) return;
 
-    // If another guest already owns this slot (possible with the old counter),
-    // skip the migration so this guest gets a fresh slot from the allocator.
+    // Skip if another guest already owns this legacy slot.
     BOOL taken = NO;
     NSDictionary *snapshot = (__bridge NSDictionary *)registry;
     for (NSString *key in snapshot) {
@@ -248,9 +222,7 @@ BOOL KeychainAcquireGroupID(NSString* bundleID, int *outGroupID, NSString** outE
     if (outErrorDescription) *outErrorDescription = nil;
     if (bundleID.length == 0 || !outGroupID) return NO;
 
-    // The host pre-assigned this guest's slot in its own registry and passed
-    // it as a launch argument; the runtime flavors live in separate sandbox
-    // containers, so the runtime never negotiates slots itself.
+    // Host pre-assigned slot via --keychain-slot.
     if (assignedSlotOverride >= 0) {
         *outGroupID = assignedSlotOverride;
         return YES;
@@ -338,8 +310,8 @@ void KeychainReleaseGroupID(NSString* bundleID) {
     int groupID = 0;
     CFNumberGetValue(assigned, kCFNumberIntType, &groupID);
 
-    // Wipe the slot's items before reissuing the number, so the next guest can
-    // never read the previous guest's secrets.
+    // Wipe before reissuing so the next guest can't read the previous one's
+    // secrets.
     KeychainWipeGroupID(groupID);
 
     CFDictionaryRemoveValue(registry, (__bridge CFStringRef)bundleID);
@@ -392,8 +364,7 @@ void KeychainWipeGroupID(int groupID) {
             (__bridge id)kSecUseDataProtectionKeychain: @YES,
         };
         SecItemDelete((__bridge CFDictionaryRef)query);
-        // Status ignored on purpose: errSecItemNotFound just means the slot was
-        // empty; other failures are best-effort for a delete loop.
+        // errSecItemNotFound just means an empty slot; deletes are best-effort.
     }
 }
 
@@ -513,8 +484,7 @@ void SecItemGuestHooksInit(NSString* hostId, NSString* groupId)  {
     int keychainGroupId = 0;
     NSString *acquireError = nil;
     if (!KeychainAcquireGroupID(groupId, &keychainGroupId, &acquireError)) {
-        // Without a slot the guest cannot be isolated; fall back to the
-        // process's default access group rather than breaking the launch.
+        // Fall back to the default access group rather than breaking the launch.
         NSLog(@"Keychain slot acquisition failed for %@: %@; using default access group", groupId, acquireError);
         return;
     }

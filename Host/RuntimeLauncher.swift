@@ -160,11 +160,8 @@ enum RuntimeLauncher {
         return outer
     }
 
-    /// Written right before spawning a guest; `Resolution.m` reads it back to
-    /// size the guest's fake `UIScreen` to the Mac's real display. The old
-    /// launcher measured from its own Catalyst window; the native host just
-    /// reads AppKit directly. Each runtime flavor reads it from its own
-    /// container, so it lands in the flavor that's actually being launched.
+    /// Written before spawning a guest; Resolution.m reads it to size the
+    /// guest's fake UIScreen. Each flavor reads it from its own container.
     static func writeDisplayMetrics(_ flavor: RuntimeFlavor) {
         // NSScreen is read on the main thread; the launcher itself runs on a
         // background queue.
@@ -188,21 +185,11 @@ enum RuntimeLauncher {
 
     // MARK: - Launch
 
-    /// Launches a guest under the runtime configured in its RunnerFeatures
-    /// plist. The guest's bundle is located in whichever runtime container it
-    /// currently resides in and the mode is read from *that* copy — never from
-    /// a UI-cached URL, which goes stale the moment a migration moves the
-    /// guest between containers.
-    ///
-    /// Migration between containers happens when the Compatibility sheet
-    /// closes (HostModel.applyRuntimeSelection); the launcher never moves
-    /// guests. A residence/mode mismatch therefore means an interrupted
-    /// switch, and is refused instead of silently launching under the other
-    /// runtime (fail closed).
-    ///
-    /// The guest's keychain slot is claimed here and passed to the runtime:
-    /// the flavors live in separate sandbox containers, so the runtime never
-    /// negotiates slots itself anymore.
+    /// Launches a guest under its configured runtime. The mode is read from
+    /// the bundle's actual residence (never a UI-cached URL); migration is
+    /// the Compat sheet's job, so a residence/mode mismatch is an interrupted
+    /// switch and is refused (fail closed). The keychain slot is claimed here
+    /// and passed to the runtime — the runtime never negotiates slots itself.
     static func launch(installName: String, guestBundleID: String?) -> LaunchOutcome {
         guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
             return LaunchOutcome(ok: false,
@@ -221,25 +208,14 @@ enum RuntimeLauncher {
                     " Open its Compatibility Settings and close the sheet to finish the switch."))
         }
 
-        // Mac-iOS wrapped runtimes get their sandbox container from
-        // containermanagerd at first LaunchServices registration — a
-        // UUID-named directory the runtime spills via its container marker
-        // (see GuestPaths.runtimeMarkerFileName). On a fresh install that
-        // container doesn't exist yet, so register the runtime once (the
-        // headless runtime exits immediately with no --launch-app) and wait
-        // for the assignment before placing the guest anywhere.
+        // The iOS runtime's UUID-named container may not exist yet on a fresh
+        // install; prime (register once) before touching any guest.
         if flavor == .ios {
             guard resolveBundle(.ios) != nil else {
                 return LaunchOutcome(ok: false,
                                      message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
             }
-            // The iOS runtime spills its UUID-named container assignment via
-            // a marker file (see GuestPaths.runtimeMarkerFileName). Cache is
-            // validated per launch; on a cold cache, try the cheap scan,
-            // then priming (register the runtime once so containermanagerd
-            // assigns a container) before touching any guest. Without this,
-            // a first-startup launch would resolve its HOME to a stale
-            // bundle-ID-named container the runtime never sees.
+            // Cache is validated per launch; on a cold cache, scan, then prime.
             guard ensureIOSRuntimeContainer() else {
                 return LaunchOutcome(ok: false,
                                      message: String(localized: "Could not set up the iOS runtime container; try again."))
@@ -247,10 +223,8 @@ enum RuntimeLauncher {
         }
 
         do {
-            // Migration happens at Compatibility-sheet close; this only
-            // catches a guest stranded outside both flavor containers (a
-            // failed sheet-close migration already reverted the plist, so
-            // normally the residence above already matches).
+            // Migration happens at Compat-sheet close; this only catches a
+            // guest stranded outside both flavor containers.
             try GuestStore.ensureGuestResides(installName: installName,
                                               guestBundleID: guestBundleID,
                                               target: flavor)
@@ -258,10 +232,7 @@ enum RuntimeLauncher {
             return LaunchOutcome(ok: false, message: error.localizedDescription)
         }
 
-        // Refuse to double-launch: the runtime holds the guest's flock while
-        // it runs, so a failed probe means an instance is live. (A guest
-        // running in the *other* container was refused above — a residence
-        // mismatch is never migrated here, only reported.)
+        // Refuse double-launch: a failed flock probe means an instance is live.
         if let guestBundleID {
             let targetHome = GuestPaths.guestHome(guestBundleID, in: flavor)
             if FileManager.default.fileExists(atPath: targetHome.path),
@@ -294,23 +265,17 @@ enum RuntimeLauncher {
         }
     }
 
-    /// --keychain-slot arguments for a pre-claimed slot; empty when the slot
-    /// couldn't be claimed (the runtime then falls back to its legacy
-    /// self-claim path).
+    /// --keychain-slot args for a pre-claimed slot; empty on claim failure
+    /// (the runtime falls back to its legacy self-claim path).
     private static func keychainSlotArgs(_ slot: Int32?) -> [String] {
         guard let slot, slot > 0 else { return [] }
         return ["--keychain-slot", String(slot)]
     }
 
-    /// Ensures the iOS runtime's UUID-named sandbox container is known
-    /// before any guest is placed or launched into the iOS flavor. Cheap no-op
-    /// once the cache is warm (two stats + a tiny read); on a cold cache —
-    /// fresh host install, or the user wiped containers/Application Support —
-    /// registers the headless runtime with LaunchServices (it exits
-    /// immediately with no --launch-app, spilling its container marker on the
-    /// way) and waits for containermanagerd's assignment. Lock-serialized so
-    /// concurrent callers (startup priming, sheet-close migration, launch)
-    /// can't double-register the runtime.
+    /// Ensures the iOS runtime's UUID-named container is known: warm-cache
+    /// no-op, else scan, else register the headless runtime with
+    /// LaunchServices and wait for containermanagerd's assignment.
+    /// Lock-serialized so concurrent callers can't double-register.
     static func ensureIOSRuntimeContainer() -> Bool {
         let bundleID = RuntimeFlavor.ios.bundleIdentifier
             ?? Bundle.main.bundleIdentifier ?? ""
@@ -325,11 +290,8 @@ enum RuntimeLauncher {
 
     private static let containerPrimeLock = NSLock()
 
-    /// Registers the iOS runtime with LaunchServices so containermanagerd
-    /// assigns its UUID-named sandbox container. The headless runtime exits
-    /// immediately when launched without --launch-app, but not before it
-    /// writes its container marker (see main.m / GuestPaths), so the host
-    /// just polls the cheap marker scan.
+    /// Registers the headless runtime with LaunchServices; it spills its
+    /// container marker on the way out, and the host polls for it.
     private static func primeIOSRuntimeContainer(bundleID: String) -> Bool {
         guard let bundle = resolveBundle(.ios) else { return false }
         let wrapped = ensureWrapped(bundle)
@@ -385,11 +347,9 @@ enum RuntimeLauncher {
 
     // MARK: - iOS runtime (LaunchServices + debugger attach)
 
-    /// Launches the wrapped iOS runtime through LaunchServices. The runtime
-    /// is launched with --wait-for-host (it SIGSTOPs itself at startup) and
-    /// the host finds the spawned pid and attaches/detaches so AMFI's
-    /// library-validation checks (and guest JIT) are satisfied before any
-    /// guest dylib is loaded.
+    /// Launches the wrapped iOS runtime via LaunchServices. The runtime
+    /// SIGSTOPs itself (--wait-for-host) and the host attaches/detaches a
+    /// debugger so AMFI library validation and guest JIT are satisfied.
     private static func launchiOSViaOpen(bundle: URL, installName: String, keychainSlot: Int32? = nil) -> LaunchOutcome {
         // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
         // (unnotarized) bundle as damaged.
@@ -413,18 +373,14 @@ enum RuntimeLauncher {
                              message: String(localized: "Launched via iOS runtime"))
     }
 
-    /// task_for_pid + ptrace(PT_ATTACHEXC)/PT_DETACH. Both binaries are
-    /// dev-signed by the same team and the runtime keeps get-task-allow, so
-    /// task_for_pid is permitted. The attach sets the CS_DEBUGGED flag AMFI
-    /// consults for dynamic code / library validation; the detach leaves the
-    /// flag set, so no debugger remains attached afterwards.
+    /// task_for_pid + ptrace attach/detach. The attach sets the CS_DEBUGGED
+    /// flag AMFI consults for dynamic code / library validation; it stays set
+    /// after the detach.
     @discardableResult
     private static func attachHostDebugger(pid: pid_t) -> Bool {
-        // The runtime SIGSTOPs itself at startup; attaching before that stop
-        // has landed catches the process running, and PT_ATTACHEXC then
-        // leaves it in an exception suspension PT_DETACH cannot clear
-        // (errno 16 / EBUSY) — the process never recovers. Wait for the
-        // kernel-visible stopped state first.
+        // Attaching before the SIGSTOP lands can leave PT_ATTACHEXC in an
+        // exception suspension PT_DETACH cannot clear (EBUSY); wait for the
+        // kernel 'T' state first.
         if !waitForStoppedState(pid: pid, timeout: 10) {
             NSLog("[launcher] runtime pid %d never reached its debugger stop; attaching anyway", pid)
         }
@@ -442,15 +398,13 @@ enum RuntimeLauncher {
             NSLog("[launcher] ptrace(PT_DETACH) failed: errno %d", errno)
             return false
         }
-        // PT_DETACH's signal alone doesn't clear a job-control (SIGSTOP) stop;
-        // resume the process explicitly.
+        // PT_DETACH's signal doesn't clear a SIGSTOP stop; resume explicitly.
         kill(pid, SIGCONT)
         NSLog("[launcher] debugger attached+detached for runtime pid %d", pid)
         return true
     }
 
-    /// Waits until the process shows the kernel 'T' (stopped) state. The
-    /// runtime's waitForDebugger SIGSTOP is what produces it.
+    /// Waits for the kernel 'T' (stopped) state produced by the runtime's SIGSTOP.
     private static func waitForStoppedState(pid: pid_t, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -485,9 +439,8 @@ enum RuntimeLauncher {
     private static var knownRuntimePIDs = Set<pid_t>()
     private static let pidLock = NSLock()
 
-    /// Polls for LaunchServices-staged iOS runtime processes (their staged
-    /// executable path always contains Wrapper/Runtime-iOS.app). Returns the
-    /// first pid not seen before.
+    /// Polls for iOS runtime processes (staged paths always contain
+    /// Wrapper/Runtime-iOS.app); returns the first pid not seen before.
     private static func pollForRuntimePID(timeout: TimeInterval) -> pid_t? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -549,8 +502,8 @@ enum RuntimeLauncher {
         return (process.terminationStatus, text)
     }
 
-    /// Direct exec of the Catalyst runtime. On failure (WindowServer/TCC
-    /// quirks), fall back to `open -n --args`, which is still argv-capable.
+    /// Direct exec of the Catalyst runtime, with argv; on failure falls back
+    /// to `open -n --args` (WindowServer/TCC quirks).
     private static func spawn(executable: String, args: [String]) -> Int32 {
         var argv: [UnsafeMutablePointer<CChar>?] =
             [strdup(executable)] + args.map { strdup($0) } + [nil]
@@ -573,8 +526,8 @@ enum RuntimeLauncher {
             return rc
         }
 
-        // A spawned runtime that dies immediately (AMFI/sandbox refusal)
-        // shouldn't count as a successful launch.
+        // A runtime that dies immediately (AMFI/sandbox refusal) doesn't
+        // count as a successful launch.
         usleep(300 * 1000)
         var status: Int32 = 0
         if waitpid(pid, &status, WNOHANG) == pid {

@@ -18,10 +18,8 @@ void SetGuestPlaceholderWindow(void *window) {
     gPlaceholderWindow = (__bridge UIWindow *)window;
 }
 
-/// Called by the scene delegate once a real UIWindowScene exists. Any guest
-/// window that was created & shown *before* the scene connected (a race in the
-/// scene lifecycle) is attached to the scene now. Returns the first adopted
-/// guest window so the caller can skip creating a placeholder.
+/// Attaches scene-less guest windows to the scene once it exists; returns
+/// the first adopted window so the caller can skip a placeholder.
 UIWindow *GuestAdoptSceneLessWindows(void) {
     UIWindowScene *scene = gGuestWindowScene;
     if (!scene) {
@@ -85,8 +83,7 @@ static UIWindowScene *CurrentGuestScene(void) {
               self, self.windowScene);
     }
 
-    // A real guest window just came up: put our blank placeholder to bed so it
-    // can't cover the guest's content.
+    // Hide our placeholder so it can't cover the guest's content.
     UIWindow *placeholder = gPlaceholderWindow;
     if (placeholder && placeholder != self && !placeholder.isHidden) {
         placeholder.hidden = YES;

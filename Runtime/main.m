@@ -25,9 +25,7 @@
 
 @import MachO;
 
-// NSProcessInfo's private arguments setter, used to give the guest a clean
-// argv. Declared here so we can call it directly instead of through an
-// undeclared performSelector.
+// NSProcessInfo's private arguments setter, for giving the guest a clean argv.
 @interface NSProcessInfo (PrivateArguments)
 - (void)setArguments:(NSArray<NSString *> *)arguments;
 @end
@@ -54,12 +52,9 @@ static void *getAppEntryPoint(void *handle) {
 }
 
 #if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
-// The LCDyld library-validation bypass (and guest JIT) only works while the
-// process carries the debugger flag, so the iOS runtime must be attached to
-// by the host before it loads any guest dylib. With --wait-for-host (passed
-// by the host for LaunchServices launches) or BASEIOSAPP_WAIT_FOR_DEBUGGER=1
-// (manual debugging), the runtime stops itself here; the host attaches
-// (task_for_pid + PT_ATTACHEXC), then detaches with SIGCONT to resume it.
+// The library-validation bypass and guest JIT need the debugger flag, so
+// the iOS runtime stops itself here (--wait-for-host or
+// BASEIOSAPP_WAIT_FOR_DEBUGGER=1) until the host attaches and detaches.
 static void waitForDebugger(void) {
     NSLog(@"[wait-for-host] Stopping pid %d, waiting for the host to attach (library-validation bypass/JIT require a debugger)", getpid());
     kill(getpid(), SIGSTOP);
@@ -85,10 +80,7 @@ static NSString *appToLaunchFromArgv(int argc, char *argv[]) {
     return nil;
 }
 
-// The host pre-assigns the guest's keychain slot in its own registry and
-// passes it here, so the runtime never negotiates slots itself (the two
-// runtime flavors live in separate sandbox containers; a shared runtime-side
-// registry is no longer possible). Absent for legacy/manual launches.
+// Host pre-assigned keychain slot (--keychain-slot); -1 for legacy launches.
 static int keychainSlotFromArgv(int argc, char *argv[]) {
     for (int i = 1; i + 1 < argc; i++) {
         if (strcmp(argv[i], "--keychain-slot") == 0) {
@@ -98,13 +90,10 @@ static int keychainSlotFromArgv(int argc, char *argv[]) {
     return -1;
 }
 
-// Marks the guest home as in use for the lifetime of this process. The host
-// probes this lock (flock, non-blocking) before migrating a guest between
-// runtime-flavor containers; flock is released by the kernel on process
-// death, so crashed runtimes never leave a stale lock behind.
+// Flock held for the process lifetime; the host probes it (non-blocking)
+// before migrating a guest. Kernel-released on process death.
 //
-// Returns the held fd, or -1 when another runtime instance is already
-// running this guest (caller must refuse to launch).
+// Returns the held fd, or -1 when the guest is already running.
 static int acquireGuestLock(NSString *guestHomeDir) {
     static int lockFD = -1;
     NSString *lockPath = [guestHomeDir stringByAppendingPathComponent:@".guest.lock"];
@@ -137,18 +126,14 @@ static NSString *appToLaunchFromFile(void) {
 
 int main(int argc, char * argv[]) {
 #if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
-    // Spill our container assignment for the host. The wrapped Mac-iOS
-    // runtime's sandbox container is UUID-named by containermanagerd, so the
-    // host cannot derive its path from the bundle ID; this marker (our
-    // bundle ID, written inside our own container) is how it finds us back.
+    // Spill the container marker (our bundle ID) so the host can find
+    // this UUID-named container back.
     {
         NSString *marker = [NSHomeDirectory() stringByAppendingPathComponent:@".baseiosapp-runtime"];
         NSString *identifier = [[NSBundle mainBundle] bundleIdentifier] ?: @"";
         [identifier writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }
-    // Stop before doing ANY work (including resolving the app bundle): the
-    // host finds the stopped process to attach its debugger before any guest
-    // dylib is loaded.
+    // Stop before ANY work so the host can attach before guest dylibs load.
     if (shouldWaitForHost(argc, argv)) {
         waitForDebugger();
     }
@@ -168,19 +153,15 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    // Headless runtime: no selection UI. The host app is the only place a
-    // guest can be picked, imported or managed.
+    // Headless runtime: no selection UI, the host app is the only launcher.
     if (!appBundlePath) {
         NSLog(@"[runtime] No valid launch request (--launch-app <installName>); exiting");
         return 1;
     }
 
-    // The keychain access-group base is the stable ".shared[.N]" group
-    // prefix shared by the host and both runtime flavors (KeychainAccessGroup
-    // Base in Info.plist), NOT this bundle's ID: the two runtime flavors have
-    // separate bundle IDs and separate sandbox containers, but guests must
-    // resolve the same access groups. Guests rewrite the bundle and HOME
-    // below, so pass both through before that happens.
+    // Access-group base is shared across flavors (Info.plist
+    // KeychainAccessGroupBase); capture bundle ID + HOME before the guest
+    // rewrites them below.
     NSString *hostAppIdentifier = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"KeychainAccessGroupBase"];
     if (hostAppIdentifier.length == 0) {
         hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
@@ -214,9 +195,7 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    // Single instance per guest: the flock is held for the process lifetime
-    // and probed by the host before it migrates a guest between runtime
-    // containers. A second launch of the same guest would corrupt its data.
+    // Single instance per guest (see acquireGuestLock).
     if (acquireGuestLock(guestHomeDir) < 0) {
         return 2;
     }
@@ -274,11 +253,9 @@ int main(int argc, char * argv[]) {
             // Get the entry point of the guest app
             appMainImageIndex = _dyld_image_count();
             hook_init(); // dyld-validation bypass is always needed to load the guest
-            // Guests with no UIApplicationSceneManifest no longer need any
-            // patching: the runner claims SDK 17.0 via -platform_version
-            // (OTHER_LDFLAGS), which makes UIKit's
-            // _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption
-            // take the tolerant path for every guest.
+            // No scene-manifest patching needed: the runner claims SDK 17.0
+            // via -platform_version (OTHER_LDFLAGS), which makes UIKit
+            // tolerant of no-scene guests.
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureScene)) {
                 GuestWindowHooksInit();
             }
@@ -299,10 +276,9 @@ int main(int argc, char * argv[]) {
             void *handle = dlopen(executablePath.UTF8String, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
             appExecutableHandle = handle;
             if (handle) {
-                // The guest executable and its frameworks were loaded by the
-                // dlopen above, so their sysctl imports are bound to the real
-                // implementation. Re-run the rebind so their GOTs are patched
-                // before any guest code runs.
+                // Re-run the rebind: the dlopened images' sysctl imports were
+                // bound to the real implementation, and their GOTs must be
+                // patched before any guest code runs.
                 if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureDeviceSpoof)) {
                     DeviceSpoofRebindLoadedImages();
                 }

@@ -2,23 +2,11 @@
 //  KeychainManager.swift
 //  BaseiOSAppHost
 //
-//  Host-side keychain slot management. The host OWNS the slot registry: the
-//  two runtime flavors live in separate sandbox containers, so the old
-//  shared-container registry is impossible — instead the host claims a
-//  guest's slot before launch and passes the number to the runtime as a
-//  --keychain-slot launch argument (Keychain.m short-circuits its own claim
-//  path when the argument is present). Registry file:
-//
-//    ~/Library/Application Support/BaseiOSApp/keychain_slots.plist
-//
-//    "<guest bundle ID>": <slot number>   // permanent assignment
-//    "free_list": [ <slot numbers> ]      // reclaimed, reusable slots
-//
-//  The pre-split registry (inside the legacy runtime container) is imported
-//  once by GuestStore.migrateLegacyIfNeeded().
-//
-//  Cross-process lock: the same O_CREAT|O_EXCL `.keychain_slots.lock` file
-//  protocol Keychain.m uses (stale locks older than 10s are broken).
+//  Host-side keychain slot management. The host owns the slot registry
+//  (~/Library/Application Support/BaseiOSApp/keychain_slots.plist) and
+//  passes a guest's slot to the runtime as --keychain-slot; Keychain.m
+//  short-circuits its own claim path when the argument is present. The
+//  cross-process lock protocol matches Keychain.m.
 //
 
 import Foundation
@@ -60,10 +48,7 @@ enum KeychainManager {
 
     // MARK: - Registry access
 
-    /// Host-owned slot registry. The runtime flavors live in separate sandbox
-    /// containers, so the registry can no longer live in a runtime container;
-    /// the host is now its single writer (the runtimes only ever receive the
-    /// pre-assigned slot number as a launch argument).
+    /// Host-owned slot registry; the host is its single writer.
     private static var registryURL: URL {
         GuestPaths.hostSupportDirectory
             .appendingPathComponent("keychain_slots.plist")
@@ -93,9 +78,7 @@ enum KeychainManager {
         }
     }
 
-    // MARK: - Cross-process lock (same protocol as Keychain.m; the host is
-    // now the only registry writer, but the file lock is kept so a second
-    // host instance cannot interleave registry writes)
+    // MARK: - Cross-process lock (same protocol as Keychain.m)
 
     private static var slotLockURL: URL {
         registryURL.deletingLastPathComponent()
@@ -145,11 +128,9 @@ enum KeychainManager {
 
     // MARK: - Slot operations
 
-    /// Returns the guest's slot, claiming one if it never had any. Called by
-    /// the launcher before every guest launch; the number is passed to the
-    /// runtime as --keychain-slot. Returns nil on registry failure — the
-    /// runtime then falls back to its own legacy claim path (single container,
-    /// manual-debugging scenario).
+    /// Returns the guest's slot, claiming one if it never had any (passed to
+    /// the runtime as --keychain-slot). nil on registry failure — the runtime
+    /// then falls back to its own legacy claim path.
     static func ensureSlot(for bundleID: String) -> Int32? {
         return withSlotLock { () -> Int32? in
             var registry = readRegistry()
@@ -166,9 +147,8 @@ enum KeychainManager {
         }
     }
 
-    /// One-time import of the pre-split registry, which lived in the legacy
-    /// shared runtime container. Runs before the guest migration so migrated
-    /// guests keep their slots. No-op once the new registry exists.
+    /// One-time import of the pre-split registry from the legacy container;
+    /// runs before the guest migration so migrated guests keep their slots.
     static func importLegacyAssignmentsIfNeeded() {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: registryURL.path) else { return }
@@ -186,8 +166,7 @@ enum KeychainManager {
         }
         guard !assignments.isEmpty else { return }
 
-        // Free list recomputed as every slot not assigned; drops any slot
-        // numbers the old scheme handed out beyond the cap.
+        // Free list = every slot not assigned.
         var registry: [String: Any] = [:]
         for (bundleID, slot) in assignments.sorted(by: { $0.key < $1.key }) {
             registry[bundleID] = NSNumber(value: slot)
@@ -200,9 +179,8 @@ enum KeychainManager {
               assignments.count)
     }
 
-    /// Deletes every keychain item stored in a numbered slot's access group
-    /// (all four item classes, data-protection keychain). No-op when the team
-    /// identity is unavailable.
+    /// Deletes every keychain item in a slot's access group (all four item
+    /// classes, data-protection keychain).
     @discardableResult
     static func wipeSlotItems(slot: Int32) -> Bool {
         guard let group = accessGroup(for: slot) else {
@@ -232,18 +210,16 @@ enum KeychainManager {
     }
 
     /// Per-app keychain reset: deletes the guest's keychain items but keeps
-    /// its slot assignment (so the next launch starts logged out, in the same
-    /// slot). Falls back to a fresh slot claim when the guest never had one.
-    /// Returns a user-presentable summary.
+    /// its slot assignment. Falls back to a fresh slot claim when the guest
+    /// never had one. Returns a user-presentable summary.
     static func resetKeychain(bundleID: String) -> String {
         let result = withSlotLock { () -> String in
             var registry = readRegistry()
 
             var slot = (registry[bundleID] as? NSNumber)?.int32Value
             if slot == nil {
-                // Guest never launched with the keychain hook; claim a slot
-                // the same way Keychain.m does so the reset lands somewhere
-                // the guest will use later.
+                // Guest never had a slot; claim one so the reset lands
+                // somewhere the guest will use later.
                 guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
                     let unknown = String(localized: "unknown error")
                     return String(localized: "Could not reset keychain: \(claimedError ?? unknown)")
@@ -263,8 +239,7 @@ enum KeychainManager {
 
     private static var claimedError: String?
 
-    /// Slot allocator mirroring Keychain.m: reuse the lowest freed number,
-    /// otherwise extend past every used slot. Caller holds the lock and owns
+    /// Slot allocator mirroring Keychain.m; caller holds the lock and owns
     /// the mutable registry copy.
     private static func claimSlot(bundleID: String, registry: inout [String: Any]) -> Int32? {
         claimedError = nil
@@ -288,10 +263,9 @@ enum KeychainManager {
         return slot
     }
 
-    /// Reclaims a guest's slot: deletes every keychain item stored in that
-    /// slot, removes the assignment, and returns the number to the free list
-    /// for reuse by the next guest. No-op for a bundle ID that never had a
-    /// slot. Returns a user-presentable summary.
+    /// Reclaims a guest's slot: wipe items, remove the assignment, return
+    /// the number to the free list. No-op for an unknown bundle ID. Returns
+    /// a user-presentable summary.
     @discardableResult
     static func releaseSlot(bundleID: String) -> String {
         return withSlotLock { () -> String in
@@ -311,9 +285,8 @@ enum KeychainManager {
         }
     }
 
-    /// Debug bulk wipe: deletes every keychain item the runtimes stored for
-    /// guest apps — slot 0 (legacy unnumbered group), every registered slot,
-    /// and every group named in the host's own entitlement.
+    /// Debug bulk wipe: every keychain item stored for guest apps (slot 0,
+    /// every registered slot, and every group in the host's own entitlement).
     static func wipeAllGuestItems() -> String {
         let classes: [CFString] = [kSecClassGenericPassword, kSecClassInternetPassword,
                                    kSecClassCertificate, kSecClassKey]
@@ -336,9 +309,8 @@ enum KeychainManager {
         return String(localized: "No keychain items found.")
     }
 
-    /// The access groups that guest items can live in: the shared group of
-    /// every registered slot plus every group named in the host's own
-    /// keychain-access-groups entitlement.
+    /// Guest item access groups: every registered slot's shared group plus
+    /// every group named in the host's own entitlement.
     private static func collectAccessGroups(slots: Set<Int32>) -> Set<String> {
         var groups = Set<String>()
         guard let task = c_SecTaskCreateFromSelf(nil) else { return groups }
@@ -360,7 +332,6 @@ enum KeychainManager {
     }
 
     /// Deletes every item in each class, globally and per access group.
-    /// Returns the number of items seen and whether anything was deleted.
     private static func deleteItems(classes: [CFString], groups: Set<String>) -> (enumerated: Int, deletedSomething: Bool) {
         var enumerated = 0
         var deletedSomething = false

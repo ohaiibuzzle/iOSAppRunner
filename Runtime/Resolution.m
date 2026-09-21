@@ -36,8 +36,7 @@ static GuestDisplayMetrics CurrentDisplayMetrics(NSString *hostHomeDirectory) {
         CGFloat frameY = [dict[@"frameY"] doubleValue];
         CGFloat frameWidth = [dict[@"frameWidth"] doubleValue];
         CGFloat frameHeight = [dict[@"frameHeight"] doubleValue];
-        // Fall back to a sane default if the launcher never wrote this file
-        // (e.g. a very first run), rather than reporting a zero-sized screen.
+        // Sane defaults when the launcher never wrote the file.
         if (width <= 0 || height <= 0) {
             width = 1512;
             height = 954;
@@ -57,10 +56,8 @@ static GuestDisplayMetrics CurrentDisplayMetrics(NSString *hostHomeDirectory) {
     return metrics;
 }
 
-/// Whether the guest declares support for a resizable window, mirroring Mac
-/// Catalyst's own `UIRequiresFullScreen` semantics: apps that opt out of
-/// requiring full screen get a resizable window; apps that don't specify (or
-/// explicitly require full screen) get a fixed-size, locked window.
+/// Mirrors Mac Catalyst's UIRequiresFullScreen semantics: apps that don't
+/// require full screen get a resizable window; others get a fixed one.
 static BOOL GuestWindowShouldBeResizable(void) {
     NSNumber *requiresFullScreen = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIRequiresFullScreen"];
     if (requiresFullScreen == nil) {
@@ -96,13 +93,9 @@ static NSString *gHostHomeDirectory;
 
 @end
 
-// Swizzling `UIWindowScene.setDelegate:` (the original approach here) turned
-// out to never actually fire for scene-native guests: UIKit connects a
-// scene's delegate through an internal path that doesn't dispatch through
-// the public `setDelegate:` selector, so a swizzle on it silently never
-// runs. PlayCover hits the same wall and works around it by reacting to
-// `UIWindow.didBecomeKeyNotification` instead — a plain NSNotification,
-// guaranteed to fire, unlike a swizzle on an internal-dispatch method.
+// Swizzling UIWindowScene.setDelegate: never fires (UIKit connects scene
+// delegates on an internal path); react to UIWindowDidBecomeKeyNotification
+// instead (same workaround as PlayCover).
 static const void *kAppliedMarkerKey = &kAppliedMarkerKey;
 
 static void ApplyDisplayFixups(UIWindow *window) {
@@ -110,9 +103,7 @@ static void ApplyDisplayFixups(UIWindow *window) {
     if (!scene) {
         return;
     }
-    // Only needs to run once per scene; guard against repeat
-    // didBecomeKeyNotification firings (e.g. the user switching back to
-    // this window later) re-fighting a user-initiated resize.
+    // Once per scene; repeat notifications must not re-fight a user resize.
     if (objc_getAssociatedObject(scene, kAppliedMarkerKey)) {
         return;
     }
@@ -126,19 +117,16 @@ static void ApplyDisplayFixups(UIWindow *window) {
             restrictions.minimumSize = CGSizeZero;
             restrictions.maximumSize = CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX);
         } else {
-            // Lock the window to the Mac's actual display resolution so it
-            // can't be resized away from what we report via UIScreen.
+            // Lock to the reported display size so it can't drift from
+            // what UIScreen reports.
             CGSize fixedSize = CurrentDisplayMetrics(gHostHomeDirectory).pointSize;
             restrictions.minimumSize = fixedSize;
             restrictions.maximumSize = fixedSize;
         }
     }
 
-    // Size restrictions only *bound* future resizing — they don't retroactively
-    // move/resize a window Mac Catalyst already placed via its own frame
-    // restoration (e.g. inheriting wherever the launcher's window last sat).
-    // For a locked window, explicitly request the real geometry so it actually
-    // opens at the Mac's display resolution instead of that inherited frame.
+    // Size restrictions only bound future resizing; for a locked window,
+    // explicitly request the real geometry so frame restoration doesn't win.
     if (!resizable) {
         CGRect targetFrame = CurrentDisplayMetrics(gHostHomeDirectory).systemFrame;
         if (!CGRectIsEmpty(targetFrame)) {

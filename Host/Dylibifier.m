@@ -2,9 +2,8 @@
 //  Dylibifier.m
 //  iOSAppRunner
 //
-//  Reusable copy of the dylibify routine originally implemented in the
-//  standalone dylibify CLI tool by Jake James. Kept logically equivalent
-//  so that the host can perform the same conversion at install time.
+//  Host copy of the dylibify routine from the standalone dylibify CLI tool
+//  by Jake James; kept logically equivalent for install-time conversion.
 //
 
 #import "Dylibifier.h"

@@ -40,11 +40,8 @@ final class HostModel: ObservableObject {
     @Published var runtimeModes: [String: RuntimeMode] = [:]
     @Published var icons: [String: NSImage] = [:]
 
-    /// Reveals a runtime flavor's home directory — its sandbox container's
-    /// `Data` folder, i.e. what the runtime sees as `NSHomeDirectory()` — in
-    /// Finder. When the container doesn't exist yet (fresh install, or the
-    /// iOS runtime's UUID container before first launch), falls back to the
-    /// closest ancestor that does so the user still lands somewhere useful.
+    /// Reveals a runtime's container Data folder in Finder, falling back to
+    /// the nearest existing ancestor.
     func revealRuntimeHome(_ flavor: RuntimeFlavor) {
         var url = GuestPaths.containerDirectory(for: flavor)
         let fm = FileManager.default
@@ -54,9 +51,8 @@ final class HostModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    /// DEBUG: BASEIOSAPP_AUTOLAUNCH=<install name> fires one launch shortly
-    /// after startup, for headless debugging of the launcher. Remove when the
-    /// launch-path investigation is over.
+    /// DEBUG: BASEIOSAPP_AUTOLAUNCH=<install name> fires one launch after
+    /// startup, for headless launcher debugging.
     private var autoLaunchDone = false
 
     func reload() {
@@ -64,8 +60,7 @@ final class HostModel: ObservableObject {
         primeRuntimeContainersIfNeeded()
         Task {
             let scan = await Task.detached(priority: .userInitiated) {
-                // One-time move of pre-split guests out of the legacy shared
-                // container; idempotent and cheap once done.
+                // One-time legacy-container move; idempotent.
                 GuestStore.migrateLegacyIfNeeded()
                 return Self.scanApps()
             }.value
@@ -80,16 +75,10 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// First-startup container readiness. On a wiped machine (no containers,
-    /// no Application Support) the iOS runtime's UUID-named sandbox container
-    /// doesn't exist until containermanagerd sees a LaunchServices
-    /// registration — so guests placed or migrated before that land in a
-    /// bundle-ID-named (stale) container the runtime never sees as HOME.
-    /// Registers the headless runtime once per session in the background:
-    /// with no --launch-app it exits immediately, spilling its container
-    /// marker (see RuntimeLauncher.ensureIOSRuntimeContainer). The Catalyst
-    /// container needs no registration — it is bundle-ID-named and
-    /// created by ensureAppsDirectory above.
+    /// Once per session in the background: register the headless iOS runtime
+    /// so containermanagerd assigns its UUID-named container before any
+    /// guest is placed or migrated. The Catalyst container needs no
+    /// registration.
     private var primedContainersThisSession = false
 
     private func primeRuntimeContainersIfNeeded() {
@@ -97,8 +86,7 @@ final class HostModel: ObservableObject {
         primedContainersThisSession = true
         Task.detached(priority: .utility) { [weak self] in
             guard RuntimeLauncher.ensureIOSRuntimeContainer() else { return }
-            // The scan's view of the iOS container may predate the priming;
-            // refresh so guests placed in the stale container are found.
+            // Refresh: the scan may predate the priming.
             await MainActor.run { [weak self] in self?.reload() }
         }
     }
@@ -110,12 +98,9 @@ final class HostModel: ObservableObject {
         var icons: [String: NSImage] = [:]
     }
 
-    /// Directory scan + plist reads + icon loading. Runs OFF the main thread;
-    /// the result is published on the main actor by reload().
-    ///
-    /// Guests live in one of the two runtime containers; both are scanned and
-    /// deduplicated by install name (Catalyst wins ties — it is the default
-    /// residence, and ensureGuestResides keeps each guest in exactly one).
+    /// Directory scan + plist reads + icon loading, off the main thread.
+    /// Both runtime containers are scanned, deduplicated by install name
+    /// (Catalyst wins ties).
     private nonisolated static func scanApps() -> AppScan {
         let fm = FileManager.default
         var contents: [URL] = []
@@ -194,8 +179,8 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// Imports a batch of IPAs sequentially. A failed IPA doesn't abort the
-    /// batch; failures are collected and reported in one aggregated error.
+    /// Imports a batch of IPAs sequentially; a failed IPA doesn't abort the
+    /// batch. Failures are collected and reported in one aggregated error.
     func importIPAs(_ urls: [URL], importFeatures: [String: Bool]) async {
         isWorking = true
         errorMessage = nil
@@ -242,14 +227,9 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// Launches a guest under the runtime configured in its RunnerFeatures
-    /// plist. The launcher locates the guest's actual residence and reads the
-    /// mode from the bundle living in a container — UI-cached URLs go stale
-    /// the moment a sheet-close migration moves the guest.
-    ///
-    /// The whole launch runs on a background queue — the iOS path blocks in
-    /// pid/state polling and `open` for seconds, which must never freeze the
-    /// UI.
+    /// Launches a guest on a background queue (the iOS path blocks in pid
+    /// polling for seconds); the launcher reads the mode from the bundle's
+    /// actual residence, never a UI-cached URL.
     func launch(_ app: InstalledApp) {
         let installName = app.id
         let bundleID = app.bundleIdentifier
@@ -329,17 +309,11 @@ final class HostModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// Runs right after the Compatibility sheet closes: migrates the guest
-    /// (bundle + data + app-groups) into the container of the runtime mode
-    /// just selected. Doing this here — not at launch — keeps launch a pure
-    /// "spawn from current residence" operation: there is no window in which
-    /// a launch reads a stale, pre-migration RunnerFeatures.plist and
-    /// silently falls back to the default (Catalyst) runtime.
-    ///
-    /// Fails closed: whenever the migration fails (guest running, container
-    /// setup failed, …), the stored mode is reverted to the flavor of the
-    /// container the guest actually resides in, so the plist never promises a
-    /// runtime the guest can't be launched under. The error names the fix.
+    /// Runs when the Compatibility sheet closes: migrates the guest into the
+    /// selected runtime's container, keeping launch a pure
+    /// spawn-from-residence operation. Fails closed — on migration failure
+    /// the stored mode reverts to the residence flavor so the plist never
+    /// promises an unlaunchable runtime.
     func applyRuntimeSelection(for app: InstalledApp) {
         let installName = app.id
         let bundleID = app.bundleIdentifier
@@ -357,8 +331,7 @@ final class HostModel: ObservableObject {
             let mode = GuestStore.runtimeMode(for: located.url)
             let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
             do {
-                // Prime first: without the UUID container assignment the
-                // migration below would move the guest into the stale
+                // Prime first or the migration lands in the stale
                 // bundle-ID-named container.
                 if target == .ios, !RuntimeLauncher.ensureIOSRuntimeContainer() {
                     throw MigrationError.containerSetupFailed
@@ -374,8 +347,7 @@ final class HostModel: ObservableObject {
                 }
             } catch {
                 // Fail closed: revert the plist to the residence flavor so
-                // it matches reality again and the app stays launchable under
-                // its current runtime; the user retries after quitting it.
+                // it matches reality again and the app stays launchable.
                 let revertMode: RuntimeMode = located.flavor == .ios ? .ios : .catalyst
                 GuestStore.writeRunnerFeatures(["runtime": revertMode.rawValue], for: located.url)
                 await MainActor.run { [weak self] in
@@ -395,9 +367,8 @@ final class HostModel: ObservableObject {
         return value
     }
 
-    /// Writes a string override into the guest's RunnerFeatures.plist. An
-    /// empty/whitespace value removes the key, so the hook falls back to its
-    /// built-in default.
+    /// Writes a string override; empty removes the key (hooks fall back to
+    /// their built-in default).
     func setSpoofOverride(_ key: String, value: String, for app: InstalledApp) {
         var plist = GuestStore.readRunnerFeatures(for: app.url) ??
             Dictionary(uniqueKeysWithValues: HostFeature.defaultValues.map { ($0, $1) })

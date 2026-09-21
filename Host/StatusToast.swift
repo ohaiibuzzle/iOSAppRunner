@@ -7,10 +7,8 @@ import SwiftUI
 
 // MARK: - Status toast
 
-/// Floating status notification: a material capsule pinned to the bottom of
-/// the window, shown while work is in flight (spinner) and briefly after it
-/// completes (checkmark). Hit-testing is disabled so it never intercepts
-/// clicks meant for the list below.
+/// Floating status capsule at the bottom of the window; hit-testing is
+/// disabled so it never intercepts clicks meant for the list below.
 struct StatusToast: View {
     @EnvironmentObject private var model: HostModel
 
