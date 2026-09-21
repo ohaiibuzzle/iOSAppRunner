@@ -571,7 +571,7 @@ enum RuntimeLauncher {
             guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { continue }
             guard targets.contains(String(cString: buffer)) else { continue }
             NSLog("[launcher] killing runtime pid %d", pid)
-            kill(pid, SIGTERM)
+            kill(pid, SIGKILL) // shut up
             signaled.append(pid)
         }
         let total = signaled.count
