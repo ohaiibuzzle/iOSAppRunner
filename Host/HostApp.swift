@@ -46,6 +46,18 @@ struct HostCommands: Commands {
             }
             .keyboardShortcut("r")
             .disabled(model.isWorking)
+
+            Divider()
+
+            Menu("Open Runtime Home in Finder") {
+                Button("Catalyst Runtime") {
+                    model.revealRuntimeHome(.catalyst)
+                }
+
+                Button("iOS Runtime") {
+                    model.revealRuntimeHome(.ios)
+                }
+            }
         }
 
         CommandMenu("Guest") {

@@ -40,6 +40,20 @@ final class HostModel: ObservableObject {
     @Published var runtimeModes: [String: RuntimeMode] = [:]
     @Published var icons: [String: NSImage] = [:]
 
+    /// Reveals a runtime flavor's home directory — its sandbox container's
+    /// `Data` folder, i.e. what the runtime sees as `NSHomeDirectory()` — in
+    /// Finder. When the container doesn't exist yet (fresh install, or the
+    /// iOS runtime's UUID container before first launch), falls back to the
+    /// closest ancestor that does so the user still lands somewhere useful.
+    func revealRuntimeHome(_ flavor: RuntimeFlavor) {
+        var url = GuestPaths.containerDirectory(for: flavor)
+        let fm = FileManager.default
+        while url.path != "/", !fm.fileExists(atPath: url.path) {
+            url = url.deletingLastPathComponent()
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     /// DEBUG: BASEIOSAPP_AUTOLAUNCH=<install name> fires one launch shortly
     /// after startup, for headless debugging of the launcher. Remove when the
     /// launch-path investigation is over.
