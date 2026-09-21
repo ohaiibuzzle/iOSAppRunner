@@ -29,11 +29,16 @@ struct AppRow: View {
                 }
             }
             Spacer()
+            // Fixed widths keep the Runtime and Version columns aligned
+            // across rows (the badge text and version strings vary).
             runtimeBadge
+                .frame(width: 64)
             if let version = app.version {
                 Text(version)
                     .font(.caption2)
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
+                    .frame(width: 56, alignment: .trailing)
             }
         }
         .padding(.vertical, 2)
@@ -43,6 +48,7 @@ struct AppRow: View {
         let mode = model.runtimeModes[app.id] ?? .catalyst
         return Text(mode == .ios ? String(localized: "iOS") : mode == .auto ? String(localized: "Auto") : String(localized: "Catalyst"))
             .font(.caption2)
+            .frame(maxWidth: .infinity) // centers within the fixed-width badge column
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(Color.secondary.opacity(0.2)))

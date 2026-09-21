@@ -40,15 +40,24 @@ final class HostModel: ObservableObject {
     @Published var runtimeModes: [String: RuntimeMode] = [:]
     @Published var icons: [String: NSImage] = [:]
 
+    /// DEBUG: BASEIOSAPP_AUTOLAUNCH=<install name> fires one launch shortly
+    /// after startup, for headless debugging of the launcher. Remove when the
+    /// launch-path investigation is over.
+    private var autoLaunchDone = false
+
     func reload() {
         GuestPaths.ensureAppsDirectory()
         Task {
             let scan = await Task.detached(priority: .userInitiated) {
-                Self.scanApps()
+                // One-time move of pre-split guests out of the legacy shared
+                // container; idempotent and cheap once done.
+                GuestStore.migrateLegacyIfNeeded()
+                return Self.scanApps()
             }.value
             apps = scan.apps
             runtimeModes = scan.runtimeModes
             icons = scan.icons
+            autoLaunchIfNeeded()
             // Drop a stale selection if its app vanished.
             if let sel = selection, !scan.apps.contains(where: { $0.id == sel.id }) {
                 selection = nil
@@ -65,10 +74,23 @@ final class HostModel: ObservableObject {
 
     /// Directory scan + plist reads + icon loading. Runs OFF the main thread;
     /// the result is published on the main actor by reload().
+    ///
+    /// Guests live in one of the two runtime containers; both are scanned and
+    /// deduplicated by install name (Catalyst wins ties — it is the default
+    /// residence, and ensureGuestResides keeps each guest in exactly one).
     private nonisolated static func scanApps() -> AppScan {
         let fm = FileManager.default
-        let contents = (try? fm.contentsOfDirectory(at: GuestPaths.appsDirectory,
-                                                    includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        var contents: [URL] = []
+        var seen = Set<String>()
+        for flavor in [RuntimeFlavor.catalyst, .ios] {
+            let directory = GuestPaths.appsDirectory(for: flavor)
+            let entries = (try? fm.contentsOfDirectory(at: directory,
+                                                       includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+            for url in entries where !seen.contains(url.lastPathComponent) {
+                seen.insert(url.lastPathComponent)
+                contents.append(url)
+            }
+        }
         var result: [InstalledApp] = []
         var modes: [String: RuntimeMode] = [:]
         var icons: [String: NSImage] = [:]
@@ -98,6 +120,25 @@ final class HostModel: ObservableObject {
         }
         result.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         return AppScan(apps: result, runtimeModes: modes, icons: icons)
+    }
+
+    /// DEBUG: launches BASEIOSAPP_AUTOLAUNCH shortly after the first reload.
+    private func autoLaunchIfNeeded() {
+        guard !autoLaunchDone,
+              let requested = ProcessInfo.processInfo.environment["BASEIOSAPP_AUTOLAUNCH"],
+              !requested.isEmpty else { return }
+        autoLaunchDone = true
+        NSLog("[autolaunch] requested=%@ installed=%@", requested as NSString,
+              apps.map(\.id).joined(separator: ", ") as NSString)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            guard let target = self.apps.first(where: { $0.id == requested }) else {
+                NSLog("[autolaunch] no app named %@", requested as NSString)
+                return
+            }
+            NSLog("[autolaunch] launching %@", target.id as NSString)
+            self.launch(target)
+        }
     }
 
     /// Opens the standard open panel (⌘O / toolbar) and stages the picked
@@ -163,20 +204,34 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// Launches a guest under its configured runtime mode.
+    /// Launches a guest under its configured runtime mode. The launcher
+    /// resolves the effective flavor, migrates the guest into that runtime's
+    /// container (so runtime-mode switches carry the data), claims its
+    /// keychain slot, and spawns.
+    ///
+    /// The whole launch runs on a background queue — the iOS path blocks in
+    /// pid/state polling and `open` for seconds, which must never freeze the
+    /// UI.
     func launch(_ app: InstalledApp) {
         let mode = GuestStore.runtimeMode(for: app.url)
-        let outcome: LaunchOutcome
-        switch mode {
-        case .ios:
-            outcome = RuntimeLauncher.launchiOS(installName: app.id)
-        case .catalyst, .auto:
-            outcome = RuntimeLauncher.launch(installName: app.id, mode: mode)
-        }
-        if outcome.ok {
-            status = outcome.message
-        } else {
-            errorMessage = outcome.message
+        let installName = app.id
+        let bundleID = app.bundleIdentifier
+
+        isWorking = true
+        status = String(localized: "Launching \(app.displayName)…")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome = RuntimeLauncher.launch(installName: installName,
+                                                 guestBundleID: bundleID,
+                                                 mode: mode)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isWorking = false
+                if outcome.ok {
+                    self.status = outcome.message
+                } else {
+                    self.errorMessage = outcome.message
+                }
+            }
         }
     }
 

@@ -28,11 +28,29 @@
 	<string></string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<!-- Bundle ID of the runtime apps embedded in this host's Resources. Both
-	     runtimes share it, so they share one sandbox container and keychain
-	     identity. Expanded at build time; the code falls back to stripping
-	     ".Host" from the host's own bundle ID. -->
-	<key>RuntimeBundleIdentifier</key>
+	<!-- The two runtime flavors carry separate bundle IDs so macOS
+	     LaunchServices treats them as distinct apps (a shared ID made it
+	     impossible to run an iOS-flavor guest and a Catalyst-flavor guest at
+	     the same time: `open` on the second flavor just activated the running
+	     instance). Each flavor gets its own sandbox container, and guests are
+	     migrated between containers when their runtime mode changes. Expanded
+	     at build time. -->
+	<key>RuntimeCatalystBundleIdentifier</key>
+	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp.RuntimeCatalyst</string>
+	<key>RuntimeiOSBundleIdentifier</key>
+	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp.RuntimeiOS</string>
+	<!-- Stable base for the keychain slot access groups (".shared[.N]").
+	     Deliberately independent of the runtime bundle IDs above: keychain
+	     items are keyed by access group, so keeping this constant means the
+	     split didn't orphan any guest keychain data. The host and both
+	     runtimes must all carry matching keychain-access-groups entitlements. -->
+	<key>KeychainAccessGroupBase</key>
+	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp</string>
+	<!-- Bundle ID the runtime apps shared before the flavor split. The
+	     pre-split single sandbox container (~/Library/Containers/<this ID>)
+	     still holds existing guests; the host migrates them out once, then
+	     retires the directory. -->
+	<key>LegacyRuntimeBundleIdentifier</key>
 	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp</string>
 </dict>
 </plist>

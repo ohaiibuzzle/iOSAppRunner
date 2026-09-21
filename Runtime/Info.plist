@@ -23,6 +23,8 @@
 			<string>SpatialGamepad</string>
 		</dict>
 	</array>
+	<key>KeychainAccessGroupBase</key>
+	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>baseapp</string>

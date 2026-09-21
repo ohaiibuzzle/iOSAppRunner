@@ -17,8 +17,22 @@ void SecItemGuestHooksInit(NSString* hostId, NSString* groupId);
 // Guest processes rewrite the main bundle and redirect HOME before hooks run,
 // so main.m captures both values beforehand and passes them in. The launcher
 // process never needs to call either function.
+//
+// KeychainSetHostBundleID now receives the *keychain access-group base*
+// (KeychainAccessGroupBase from Info.plist), not the runtime's own bundle ID:
+// the two runtime flavors have separate bundle IDs but must resolve the same
+// ".shared[.N]" groups.
 void KeychainSetHostBundleID(NSString* hostBundleID);
 void KeychainSetHostHome(NSString* hostHomePath);
+
+// Pins the guest's keychain slot to a number the host pre-assigned in its own
+// slot registry and passed as a --keychain-slot launch argument. When set,
+// KeychainAcquireGroupID short-circuits and never touches the registry: the
+// runtime flavors live in separate sandbox containers, so a runtime-owned
+// shared registry is no longer possible. Call before
+// SecItemGuestHooksInit; pass a negative number (or don't call) to keep the
+// legacy self-claim behavior (manual debugging without the host).
+void KeychainSetAssignedSlot(int slotNumber);
 
 // Slot registry access, for the launcher (Swift reaches these via
 // @_silgen_name). Safe to call from any process in the host sandbox.

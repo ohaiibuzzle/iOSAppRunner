@@ -80,8 +80,11 @@ NSNumber* KeychainGroupIDForBundleID(NSString* bundleID);
 // declared in iOSAppRunner.entitlements.
 static const int MAX_KEYCHAIN_GROUP_ID = 127;
 
-// The host bundle ID, captured before guests rewrite the main bundle. Used to
-// build access-group names for wipes (guests cannot rely on NSBundle).
+// The keychain access-group base, captured before guests rewrite the main
+// bundle. Used to build access-group names for wipes (guests cannot rely on
+// NSBundle). Now carries the KeychainAccessGroupBase Info.plist value rather
+// than the runtime's own bundle ID, so both runtime flavors resolve the same
+// groups.
 static NSString* keychainHostAppID = nil;
 // The host sandbox home, captured before guests redirect HOME. Anchors both
 // the registry plist and the cross-process lock file.
@@ -90,6 +93,16 @@ static NSString* keychainHostHome = nil;
 void KeychainSetHostBundleID(NSString* hostBundleID) {
     if (keychainHostAppID == nil && hostBundleID.length > 0) {
         keychainHostAppID = [hostBundleID copy];
+    }
+}
+
+// Slot number pre-assigned by the host and passed via --keychain-slot. -1
+// until set; KeychainAcquireGroupID short-circuits to it when >= 0.
+static int assignedSlotOverride = -1;
+
+void KeychainSetAssignedSlot(int slotNumber) {
+    if (assignedSlotOverride == -1 && slotNumber >= 0 && slotNumber <= MAX_KEYCHAIN_GROUP_ID) {
+        assignedSlotOverride = slotNumber;
     }
 }
 
@@ -234,6 +247,14 @@ static void migrateLegacySlotIfNeeded(NSString* guestBundleID, CFMutableDictiona
 BOOL KeychainAcquireGroupID(NSString* bundleID, int *outGroupID, NSString** outErrorDescription) {
     if (outErrorDescription) *outErrorDescription = nil;
     if (bundleID.length == 0 || !outGroupID) return NO;
+
+    // The host pre-assigned this guest's slot in its own registry and passed
+    // it as a launch argument; the runtime flavors live in separate sandbox
+    // containers, so the runtime never negotiates slots itself.
+    if (assignedSlotOverride >= 0) {
+        *outGroupID = assignedSlotOverride;
+        return YES;
+    }
 
     [keychainRegistryLock() lock];
     int lockFD = acquireSlotLock();

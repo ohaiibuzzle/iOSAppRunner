@@ -25,6 +25,29 @@ enum RuntimeFlavor {
         case .ios: return "Runtime-iOS.app"
         }
     }
+
+    /// Host Info.plist key carrying this flavor's bundle ID. The two flavors
+    /// have separate IDs so LaunchServices treats them as distinct apps and
+    /// both can run at the same time (a shared ID made `open` on the second
+    /// flavor just activate the already-running instance).
+    var infoPlistBundleIDKey: String {
+        switch self {
+        case .catalyst: return "RuntimeCatalystBundleIdentifier"
+        case .ios: return "RuntimeiOSBundleIdentifier"
+        }
+    }
+
+    var displayName: String {
+        self == .catalyst ? "Catalyst" : "iOS"
+    }
+
+    /// This flavor's bundle ID from the host's Info.plist (nil when the key
+    /// is missing or still carries an unexpanded build setting).
+    var bundleIdentifier: String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: infoPlistBundleIDKey) as? String,
+              !value.isEmpty, !value.hasPrefix("$(") else { return nil }
+        return value
+    }
 }
 
 struct LaunchOutcome {
@@ -137,82 +160,194 @@ enum RuntimeLauncher {
         return outer
     }
 
-    // MARK: - Host display metrics hand-off
-
     /// Written right before spawning a guest; `Resolution.m` reads it back to
     /// size the guest's fake `UIScreen` to the Mac's real display. The old
     /// launcher measured from its own Catalyst window; the native host just
-    /// reads AppKit directly.
-    static func writeDisplayMetrics() {
-        guard let screen = NSScreen.main else { return }
-        let visibleFrame = screen.visibleFrame   // excludes menu bar + Dock
-        let metrics: [String: Any] = [
-            "width": Double(visibleFrame.width),
-            "height": Double(visibleFrame.height),
-            "scale": Double(screen.backingScaleFactor),
-            "frameX": Double(visibleFrame.origin.x),
-            "frameY": Double(visibleFrame.origin.y),
-            "frameWidth": Double(visibleFrame.width),
-            "frameHeight": Double(visibleFrame.height)
-        ]
-        (metrics as NSDictionary).write(to: GuestPaths.displayResolutionFile, atomically: true)
+    /// reads AppKit directly. Each runtime flavor reads it from its own
+    /// container, so it lands in the flavor that's actually being launched.
+    static func writeDisplayMetrics(_ flavor: RuntimeFlavor) {
+        // NSScreen is read on the main thread; the launcher itself runs on a
+        // background queue.
+        let metrics: [String: Any]? = {
+            let read = {
+                guard let screen = NSScreen.main else { return nil as [String: Any]? }
+                let visibleFrame = screen.visibleFrame   // excludes menu bar + Dock
+                return ["width": Double(visibleFrame.width),
+                        "height": Double(visibleFrame.height),
+                        "scale": Double(screen.backingScaleFactor),
+                        "frameX": Double(visibleFrame.origin.x),
+                        "frameY": Double(visibleFrame.origin.y),
+                        "frameWidth": Double(visibleFrame.width),
+                        "frameHeight": Double(visibleFrame.height)] as [String: Any]
+            }
+            return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+        }()
+        guard let metrics else { return }
+        (metrics as NSDictionary).write(to: GuestPaths.displayResolutionFile(for: flavor), atomically: true)
     }
 
     // MARK: - Launch
 
     /// Launches a guest under the runtime selected by its `runtime` mode.
     /// `auto` prefers Catalyst and falls back to iOS.
-    static func launch(installName: String, mode: RuntimeMode) -> LaunchOutcome {
-        writeDisplayMetrics()
+    ///
+    /// Guests live in exactly one runtime container; before spawning, the
+    /// guest is migrated into the effective flavor's container
+    /// (ensureGuestResides) so flavor switches — including the silent `auto`
+    /// fallback — carry the guest's data along. The guest's keychain slot is
+    /// claimed here too and passed to the runtime: the flavors live in
+    /// separate sandbox containers, so the runtime never negotiates slots
+    /// itself anymore.
+    static func launch(installName: String, guestBundleID: String?, mode: RuntimeMode) -> LaunchOutcome {
+        NSLog("[launcher] launch %@ (guest=%@, mode=%@)", installName as NSString,
+              (guestBundleID ?? "-") as NSString, mode.rawValue as NSString)
+        let flavor = effectiveFlavor(for: mode)
+        NSLog("[launcher] effectiveFlavor=%@ container=%@",
+              flavor.displayName as NSString,
+              GuestPaths.containerDirectory(for: flavor).path as NSString)
 
-        switch mode {
+        // Mac-iOS wrapped runtimes get their sandbox container from
+        // containermanagerd at first LaunchServices registration — a
+        // UUID-named directory the runtime spills via its container marker
+        // (see GuestPaths.runtimeMarkerFileName). On a fresh install that
+        // container doesn't exist yet, so register the runtime once (the
+        // headless runtime exits immediately with no --launch-app) and wait
+        // for the assignment before placing the guest anywhere.
+        if flavor == .ios {
+            guard resolveBundle(.ios) != nil else {
+                return LaunchOutcome(ok: false,
+                                     message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
+            }
+            let iosBundleID = RuntimeFlavor.ios.bundleIdentifier
+                ?? Bundle.main.bundleIdentifier ?? ""
+            // The iOS runtime spills its UUID-named container assignment via
+            // a marker file (see GuestPaths.runtimeMarkerFileName). Cache is
+            // validated per launch; on a cold cache, try the cheap scan,
+            // then priming (register the runtime once so containermanagerd
+            // assigns a container) before placing any guest.
+            if GuestPaths.knownMacIOSContainerName(for: iosBundleID) == nil {
+                if GuestPaths.discoverMacIOSContainerName(for: iosBundleID) == nil,
+                   !primeIOSRuntimeContainer(bundleID: iosBundleID) {
+                    return LaunchOutcome(ok: false,
+                                         message: String(localized: "Could not set up the iOS runtime container; try again."))
+                }
+            }
+        }
+
+        do {
+            try GuestStore.ensureGuestResides(installName: installName,
+                                              guestBundleID: guestBundleID,
+                                              target: flavor)
+        } catch {
+            return LaunchOutcome(ok: false, message: error.localizedDescription)
+        }
+
+        // Refuse to double-launch: the runtime holds the guest's flock while
+        // it runs, so a failed probe means an instance is live. (A guest
+        // running in the *other* container is caught earlier — the migration
+        // above refuses to move it.)
+        if let guestBundleID {
+            let targetHome = GuestPaths.guestHome(guestBundleID, in: flavor)
+            if FileManager.default.fileExists(atPath: targetHome.path),
+               GuestPaths.guestIsRunning(guestHome: targetHome) {
+                return LaunchOutcome(ok: false,
+                                     message: String(localized: "\(installName) is already running; quit it first."))
+            }
+        }
+
+        let slot = guestBundleID.flatMap { KeychainManager.ensureSlot(for: $0) }
+        writeDisplayMetrics(flavor)
+
+        switch flavor {
         case .ios:
-            return launchiOS(installName: installName)
-        case .catalyst, .auto:
+            guard let bundle = resolveBundle(.ios) else {
+                return LaunchOutcome(ok: false,
+                                     message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
+            }
+            return launchiOSViaOpen(bundle: ensureWrapped(bundle), installName: installName,
+                                    keychainSlot: slot)
+        case .catalyst:
             guard let bundle = resolveBundle(.catalyst),
                   let exec = executablePath(of: bundle) else {
-                if mode == .auto {
-                    return launchiOS(installName: installName)
-                }
                 return LaunchOutcome(ok: false,
                                      message: String(localized:
                                          "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets."))
             }
-            return launchCatalyst(executable: exec, bundlePath: bundle.path, installName: installName)
+            return launchCatalyst(executable: exec, bundlePath: bundle.path,
+                                  installName: installName, keychainSlot: slot)
         }
     }
 
-    /// Launches a guest under the iOS runtime. The debugger attach is a
-    /// launch requirement, not an option: the runtime's library-validation
-    /// bypass (and guest JIT) only work with the debugger flag set.
-    static func launchiOS(installName: String) -> LaunchOutcome {
-        guard let bundle = resolveBundle(.ios) else {
-            return LaunchOutcome(ok: false,
-                                 message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
+    /// The runtime a launch will actually use: explicit `ios` always wins;
+    /// `catalyst`/`auto` prefer Catalyst and fall back to iOS when the
+    /// Catalyst runtime bundle is unavailable.
+    static func effectiveFlavor(for mode: RuntimeMode) -> RuntimeFlavor {
+        guard mode != .ios else { return .ios }
+        if let bundle = resolveBundle(.catalyst), executablePath(of: bundle) != nil {
+            return .catalyst
         }
-        writeDisplayMetrics()
-        return launchiOSViaOpen(bundle: ensureWrapped(bundle), installName: installName)
+        return .ios
+    }
+
+    /// --keychain-slot arguments for a pre-claimed slot; empty when the slot
+    /// couldn't be claimed (the runtime then falls back to its legacy
+    /// self-claim path).
+    private static func keychainSlotArgs(_ slot: Int32?) -> [String] {
+        guard let slot, slot > 0 else { return [] }
+        return ["--keychain-slot", String(slot)]
+    }
+
+    /// Registers the iOS runtime with LaunchServices so containermanagerd
+    /// assigns its UUID-named sandbox container. The headless runtime exits
+    /// immediately when launched without --launch-app, but not before it
+    /// writes its container marker (see main.m / GuestPaths), so the host
+    /// just polls the cheap marker scan.
+    private static func primeIOSRuntimeContainer(bundleID: String) -> Bool {
+        guard let bundle = resolveBundle(.ios) else { return false }
+        let wrapped = ensureWrapped(bundle)
+        // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
+        // (unnotarized) bundle as damaged.
+        _ = c_stripXattrsRecursive(wrapped.path)
+        let (status, stderrText) = runOpen(bundlePath: wrapped.path, arguments: [])
+        guard status == 0 else {
+            NSLog("[launcher] priming open failed: %@", stderrText as NSString)
+            return false
+        }
+
+        NSLog("[launcher] priming iOS runtime container registration…")
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            if GuestPaths.discoverMacIOSContainerName(for: bundleID) != nil {
+                NSLog("[launcher] iOS runtime container discovered")
+                return true
+            }
+            usleep(200 * 1000)
+        }
+        NSLog("[launcher] iOS runtime container was not discovered within 15s")
+        return false
     }
 
     // MARK: - Catalyst spawning (direct exec)
 
-    private static func launchCatalyst(executable: URL, bundlePath: String, installName: String) -> LaunchOutcome {
-        let rc = spawn(executable: executable.path, args: ["--launch-app", installName])
+    private static func launchCatalyst(executable: URL, bundlePath: String, installName: String,
+                                       keychainSlot: Int32? = nil) -> LaunchOutcome {
+        let args = ["--launch-app", installName] + keychainSlotArgs(keychainSlot)
+        let rc = spawn(executable: executable.path, args: args)
         if rc == 0 {
             return LaunchOutcome(ok: true, message: String(localized: "Launched via Catalyst runtime"))
         }
 
         NSLog("[launcher] direct Catalyst spawn failed (rc=%d); falling back to open -n --args", rc)
-        return openFallback(bundlePath: bundlePath, installName: installName,
+        return openFallback(bundlePath: bundlePath, arguments: args,
                             successMessage: String(localized: "Launched via Catalyst runtime (open)"),
                             failurePrefix: String(localized: "Failed to launch Catalyst runtime"))
     }
 
     /// Launches a runtime bundle via `open -n --args`, capturing stderr so
     /// the caller sees LaunchServices' actual complaint.
-    private static func openFallback(bundlePath: String, installName: String,
+    private static func openFallback(bundlePath: String, arguments: [String],
                                      successMessage: String, failurePrefix: String) -> LaunchOutcome {
-        let (status, stderrText) = runOpen(bundlePath: bundlePath, arguments: ["--launch-app", installName])
+        let (status, stderrText) = runOpen(bundlePath: bundlePath, arguments: arguments)
         if status == 0 {
             return LaunchOutcome(ok: true, message: successMessage)
         }
@@ -227,13 +362,14 @@ enum RuntimeLauncher {
     /// the host finds the spawned pid and attaches/detaches so AMFI's
     /// library-validation checks (and guest JIT) are satisfied before any
     /// guest dylib is loaded.
-    private static func launchiOSViaOpen(bundle: URL, installName: String) -> LaunchOutcome {
+    private static func launchiOSViaOpen(bundle: URL, installName: String, keychainSlot: Int32? = nil) -> LaunchOutcome {
         // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
         // (unnotarized) bundle as damaged.
         _ = c_stripXattrsRecursive(bundle.path)
 
+        let arguments = ["--launch-app", installName, "--wait-for-host"] + keychainSlotArgs(keychainSlot)
         let (status, stderrText) = runOpen(bundlePath: bundle.path,
-                                           arguments: ["--launch-app", installName, "--wait-for-host"])
+                                           arguments: arguments)
         guard status == 0 else {
             let detail = stderrText.isEmpty ? String(localized: "open exited with \(status)") : stderrText
             return LaunchOutcome(ok: false, message: String(localized: "Failed to launch iOS runtime: \(detail)"))
@@ -256,6 +392,14 @@ enum RuntimeLauncher {
     /// flag set, so no debugger remains attached afterwards.
     @discardableResult
     private static func attachHostDebugger(pid: pid_t) -> Bool {
+        // The runtime SIGSTOPs itself at startup; attaching before that stop
+        // has landed catches the process running, and PT_ATTACHEXC then
+        // leaves it in an exception suspension PT_DETACH cannot clear
+        // (errno 16 / EBUSY) — the process never recovers. Wait for the
+        // kernel-visible stopped state first.
+        if !waitForStoppedState(pid: pid, timeout: 10) {
+            NSLog("[launcher] runtime pid %d never reached its debugger stop; attaching anyway", pid)
+        }
         var task: mach_port_t = 0
         let kr = task_for_pid(mach_task_self_, pid, &task)
         guard kr == KERN_SUCCESS else {
@@ -275,6 +419,37 @@ enum RuntimeLauncher {
         kill(pid, SIGCONT)
         NSLog("[launcher] debugger attached+detached for runtime pid %d", pid)
         return true
+    }
+
+    /// Waits until the process shows the kernel 'T' (stopped) state. The
+    /// runtime's waitForDebugger SIGSTOP is what produces it.
+    private static func waitForStoppedState(pid: pid_t, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let state = processState(pid: pid), state.hasPrefix("T") {
+                return true
+            }
+            usleep(100 * 1000)
+        }
+        return false
+    }
+
+    private static func processState(pid: pid_t) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-o", "stat=", "-p", String(pid)]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        process.waitUntilExit()
+        guard let data = try? stdout.fileHandleForReading.readToEnd(),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Process discovery

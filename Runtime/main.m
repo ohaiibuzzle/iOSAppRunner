@@ -15,6 +15,8 @@
 #import <stdlib.h>
 #import <unistd.h>
 #import <signal.h>
+#import <fcntl.h>
+#import <sys/file.h>
 #import "Resolution.h"
 #import "GroupContainer.h"
 #import "WindowHooks.h"
@@ -83,6 +85,44 @@ static NSString *appToLaunchFromArgv(int argc, char *argv[]) {
     return nil;
 }
 
+// The host pre-assigns the guest's keychain slot in its own registry and
+// passes it here, so the runtime never negotiates slots itself (the two
+// runtime flavors live in separate sandbox containers; a shared runtime-side
+// registry is no longer possible). Absent for legacy/manual launches.
+static int keychainSlotFromArgv(int argc, char *argv[]) {
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--keychain-slot") == 0) {
+            return atoi(argv[i + 1]);
+        }
+    }
+    return -1;
+}
+
+// Marks the guest home as in use for the lifetime of this process. The host
+// probes this lock (flock, non-blocking) before migrating a guest between
+// runtime-flavor containers; flock is released by the kernel on process
+// death, so crashed runtimes never leave a stale lock behind.
+//
+// Returns the held fd, or -1 when another runtime instance is already
+// running this guest (caller must refuse to launch).
+static int acquireGuestLock(NSString *guestHomeDir) {
+    static int lockFD = -1;
+    NSString *lockPath = [guestHomeDir stringByAppendingPathComponent:@".guest.lock"];
+    int fd = open(lockPath.fileSystemRepresentation, O_RDWR | O_CREAT, 0644);
+    if (fd < 0) {
+        NSLog(@"[runtime] could not open guest lock %@: %s", lockPath, strerror(errno));
+        return -1;
+    }
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        NSLog(@"[runtime] guest %@ is already running; refusing double launch", guestHomeDir.lastPathComponent);
+        close(fd);
+        return -1;
+    }
+    // Deliberately never closed: the lock must outlive main().
+    lockFD = fd;
+    return lockFD;
+}
+
 // Backward compatibility: a plain app_to_launch.txt request file in the
 // runtime's home (shared container Data directory).
 static NSString *appToLaunchFromFile(void) {
@@ -96,7 +136,26 @@ static NSString *appToLaunchFromFile(void) {
 }
 
 int main(int argc, char * argv[]) {
+#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
+    // Spill our container assignment for the host. The wrapped Mac-iOS
+    // runtime's sandbox container is UUID-named by containermanagerd, so the
+    // host cannot derive its path from the bundle ID; this marker (our
+    // bundle ID, written inside our own container) is how it finds us back.
+    {
+        NSString *marker = [NSHomeDirectory() stringByAppendingPathComponent:@".baseiosapp-runtime"];
+        NSString *identifier = [[NSBundle mainBundle] bundleIdentifier] ?: @"";
+        [identifier writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }
+    // Stop before doing ANY work (including resolving the app bundle): the
+    // host finds the stopped process to attach its debugger before any guest
+    // dylib is loaded.
+    if (shouldWaitForHost(argc, argv)) {
+        waitForDebugger();
+    }
+#endif
+
     NSString *appBundleName = appToLaunchFromArgv(argc, argv) ?: appToLaunchFromFile();
+    int keychainSlot = keychainSlotFromArgv(argc, argv);
 
     NSString *appBundlePath = nil;
     if (appBundleName.length > 0) {
@@ -116,20 +175,21 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-#if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
-    if (shouldWaitForHost(argc, argv)) {
-        waitForDebugger();
+    // The keychain access-group base is the stable ".shared[.N]" group
+    // prefix shared by the host and both runtime flavors (KeychainAccessGroup
+    // Base in Info.plist), NOT this bundle's ID: the two runtime flavors have
+    // separate bundle IDs and separate sandbox containers, but guests must
+    // resolve the same access groups. Guests rewrite the bundle and HOME
+    // below, so pass both through before that happens.
+    NSString *hostAppIdentifier = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"KeychainAccessGroupBase"];
+    if (hostAppIdentifier.length == 0) {
+        hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
     }
-#endif
-
-    NSString *hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
     NSString *hostHomeDirectory = NSHomeDirectory();
 
-    // The keychain slot registry must address the host's own preferences
-    // domain and lock file; guests rewrite the bundle and HOME below, so pass
-    // both through before that happens.
     KeychainSetHostBundleID(hostAppIdentifier);
     KeychainSetHostHome(hostHomeDirectory);
+    KeychainSetAssignedSlot(keychainSlot);
 
     // Load the App.app bundle from [shared container Data]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
@@ -153,6 +213,14 @@ int main(int argc, char * argv[]) {
         } else {            NSLog(@"Successfully created guest home directory at %@", guestHomeDir);
         }
     }
+
+    // Single instance per guest: the flock is held for the process lifetime
+    // and probed by the host before it migrates a guest between runtime
+    // containers. A second launch of the same guest would corrupt its data.
+    if (acquireGuestLock(guestHomeDir) < 0) {
+        return 2;
+    }
+
     setenv("HOME", guestHomeDir.UTF8String, 1);
     setenv("CFFIXED_USER_HOME", guestHomeDir.UTF8String, 1);
 
@@ -174,12 +242,14 @@ int main(int argc, char * argv[]) {
     overwriteMainCFBundle();
 
     NSMutableArray<NSString *> *objcArgv = NSProcessInfo.processInfo.arguments.mutableCopy;
-    // Strip the host's private --launch-app <name> tokens so the guest sees
-    // a clean argument list.
-    NSUInteger launchFlagIdx = [objcArgv indexOfObject:@"--launch-app"];
-    if (launchFlagIdx != NSNotFound) {
-        NSUInteger len = MIN((NSUInteger)2, objcArgv.count - launchFlagIdx);
-        [objcArgv removeObjectsInRange:NSMakeRange(launchFlagIdx, len)];
+    // Strip the host's private --launch-app <name> and --keychain-slot <N>
+    // tokens so the guest sees a clean argument list.
+    for (NSString *flag in @[@"--launch-app", @"--keychain-slot"]) {
+        NSUInteger flagIdx = [objcArgv indexOfObject:flag];
+        if (flagIdx != NSNotFound) {
+            NSUInteger len = MIN((NSUInteger)2, objcArgv.count - flagIdx);
+            [objcArgv removeObjectsInRange:NSMakeRange(flagIdx, len)];
+        }
     }
     objcArgv[0] = appBundle.executablePath;
     [NSProcessInfo.processInfo setArguments:objcArgv];
