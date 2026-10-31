@@ -23,24 +23,10 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		AB7D908E2F5ACEA30061186D /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		AB2000000000000000000011 /* BaseiOSApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseiOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB2000000000000000000012 /* Runtime-Catalyst.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Runtime-Catalyst.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB2000000000000000000013 /* Runtime-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Runtime-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB6A3B9A303D354E005100AD /* dylibify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dylibify; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB7D90972F5ACECD0061186D /* convert.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = convert.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -120,11 +106,6 @@
 			path = litehook;
 			sourceTree = "<group>";
 		};
-		AB7D909E2F5ACED50061186D /* dylibify */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = dylibify;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,13 +130,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB7D908D2F5ACEA30061186D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -165,7 +139,6 @@
 				AB2000000000000000000011 /* BaseiOSApp.app */,
 				AB2000000000000000000012 /* Runtime-Catalyst.app */,
 				AB2000000000000000000013 /* Runtime-iOS.app */,
-				AB6A3B9A303D354E005100AD /* dylibify */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -176,8 +149,6 @@
 				AB2000000000000000000021 /* Host */,
 				AB2000000000000000000022 /* Runtime */,
 				AB7D90832F5AC9970061186D /* litehook */,
-				AB7D909E2F5ACED50061186D /* dylibify */,
-				AB7D90972F5ACECD0061186D /* convert.sh */,
 				AB2000000000000000000031 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -257,28 +228,6 @@
 			productReference = AB2000000000000000000013 /* Runtime-iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AB7D908F2F5ACEA30061186D /* dylibify */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AB7D90942F5ACEA30061186D /* Build configuration list for PBXNativeTarget "dylibify" */;
-			buildPhases = (
-				AB7D908C2F5ACEA30061186D /* Sources */,
-				AB7D908D2F5ACEA30061186D /* Frameworks */,
-				AB7D908E2F5ACEA30061186D /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				AB7D909E2F5ACED50061186D /* dylibify */,
-			);
-			name = dylibify;
-			packageProductDependencies = (
-			);
-			productName = dylibify;
-			productReference = AB6A3B9A303D354E005100AD /* dylibify */;
-			productType = "com.apple.product-type.tool";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -295,9 +244,6 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					AB2000000000000000000003 = {
-						CreatedOnToolsVersion = 26.3;
-					};
-					AB7D908F2F5ACEA30061186D = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -319,7 +265,6 @@
 				AB2000000000000000000001 /* BaseiOSAppHost */,
 				AB2000000000000000000002 /* BaseiOSAppRuntime-Catalyst */,
 				AB2000000000000000000003 /* BaseiOSAppRuntime-iOS */,
-				AB7D908F2F5ACEA30061186D /* dylibify */,
 			);
 		};
 /* End PBXProject section */
@@ -397,13 +342,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		AB20000000000000000000E3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AB7D908C2F5ACEA30061186D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -973,32 +911,6 @@
 			};
 			name = Release;
 		};
-		AB7D90952F5ACEA30061186D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = PSAZVTU7XU;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-			};
-			name = Debug;
-		};
-		AB7D90962F5ACEA30061186D /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = PSAZVTU7XU;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-			};
-			name = Release;
-		};
 		AB97C8672F4A326A00D24724 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1147,15 +1059,6 @@
 			buildConfigurations = (
 				AB2000000000000000000061 /* Debug */,
 				AB2000000000000000000062 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		AB7D90942F5ACEA30061186D /* Build configuration list for PBXNativeTarget "dylibify" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AB7D90952F5ACEA30061186D /* Debug */,
-				AB7D90962F5ACEA30061186D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

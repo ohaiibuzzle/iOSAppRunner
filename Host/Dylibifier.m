@@ -19,231 +19,81 @@
 
 #define DLB_SWAP32(p) __builtin_bswap32(p)
 
-static void *dlb_load_bytes(FILE *obj_file, off_t offset, size_t size) {
-    void *buf = calloc(1, size);
-    fseek(obj_file, offset, SEEK_SET);
-    fread(buf, size, 1, obj_file);
-    return buf;
-}
-
-static void dlb_write_bytes(FILE *obj_file, off_t offset, size_t size, void *bytes) {
-    fseek(obj_file, offset, SEEK_SET);
-    fwrite(bytes, size, 1, obj_file);
-}
-
-static void dlb_patch_mach_header(FILE *obj_file, off_t offset, void *mh, BOOL is64bit) {
-    if (is64bit) {
-        ((struct mach_header_64 *)mh)->filetype = MH_DYLIB;
-        ((struct mach_header_64 *)mh)->flags |= MH_NO_REEXPORTED_DYLIBS;
-        dlb_write_bytes(obj_file, offset, sizeof(struct mach_header_64), mh);
-    } else {
-        ((struct mach_header *)mh)->filetype = MH_DYLIB;
-        ((struct mach_header *)mh)->flags |= MH_NO_REEXPORTED_DYLIBS;
-        dlb_write_bytes(obj_file, offset, sizeof(struct mach_header), mh);
+// Patches one 64-bit thin slice at slice_offset: MH_EXECUTE -> MH_DYLIB,
+// __PAGEZERO remapped, LC_ID_DYLIB appended. Segment indices are unchanged,
+// so the dyld bind/rebase opcodes need no edits. Nothing is written unless
+// the new command fits in the header padding.
+static int patch_slice(FILE *file, off_t slice_offset, const char *name) {
+    struct mach_header_64 mh;
+    fseeko(file, slice_offset, SEEK_SET);
+    if (fread(&mh, sizeof(mh), 1, file) != 1 || mh.magic != MH_MAGIC_64) {
+        NSLog(@"[dylibify] unrecognised magic 0x%x", mh.magic);
+        return -1;
     }
-}
-
-static void dlb_append_dylib_id_command(FILE *obj_file,
-                                        off_t header_offset,
-                                        off_t cmds_end_offset,
-                                        BOOL is64bit,
-                                        const char *target) {
-    uint32_t cmdsize = (uint32_t)(sizeof(struct dylib_command) +
-                                  [@(target) lastPathComponent].length + 18);
-    if (is64bit) {
-        cmdsize = (cmdsize + 7) & ~7;
-    } else {
-        cmdsize = (cmdsize + 3) & ~3;
+    if (mh.sizeofcmds == 0 || mh.sizeofcmds > (16u * 1024 * 1024)) {
+        NSLog(@"[dylibify] bad sizeofcmds %u", mh.sizeofcmds);
+        return -1;
     }
 
-    struct dylib_command *dylib_cmd = (struct dylib_command *)calloc(1, cmdsize);
-    dylib_cmd->cmd = LC_ID_DYLIB;
-    dylib_cmd->cmdsize = cmdsize;
-    dylib_cmd->dylib.name.offset = sizeof(struct dylib_command);
-    dylib_cmd->dylib.timestamp = 1;
-    dylib_cmd->dylib.current_version = 0;
-    dylib_cmd->dylib.compatibility_version = 0;
+    uint32_t idPathLen = (uint32_t)(strlen("@executable_path/") + strlen(name) + 1);
+    uint32_t idSize = (uint32_t)((sizeof(struct dylib_command) + idPathLen + 7) & ~7u);
 
-    strcpy(
-        (char *)dylib_cmd + sizeof(struct dylib_command),
-        ([[NSString stringWithFormat:@"@executable_path/%@",
-                                     [@(target) lastPathComponent]] UTF8String]));
-
-    dlb_write_bytes(obj_file, cmds_end_offset, cmdsize, dylib_cmd);
-    free(dylib_cmd);
-
-    if (is64bit) {
-        struct mach_header_64 *mh =
-            dlb_load_bytes(obj_file, header_offset, sizeof(struct mach_header_64));
-        mh->ncmds += 1;
-        mh->sizeofcmds += cmdsize;
-        dlb_write_bytes(obj_file, header_offset, sizeof(struct mach_header_64), mh);
-        free(mh);
-    } else {
-        struct mach_header *mh =
-            dlb_load_bytes(obj_file, header_offset, sizeof(struct mach_header));
-        mh->ncmds += 1;
-        mh->sizeofcmds += cmdsize;
-        dlb_write_bytes(obj_file, header_offset, sizeof(struct mach_header), mh);
-        free(mh);
+    uint8_t *lc = calloc(1, (size_t)mh.sizeofcmds + idSize);
+    if (!lc || fread(lc, mh.sizeofcmds, 1, file) != 1) {
+        free(lc);
+        return -1;
     }
-}
 
-static void dlb_patch_pagezero(FILE *obj_file,
-                               off_t offset,
-                               struct load_command *cmd,
-                               BOOL copied,
-                               void *seg,
-                               size_t sizeofseg,
-                               const char *target) {
-    if (cmd->cmd == LC_SEGMENT_64) {
-        struct segment_command_64 *seg64 = (struct segment_command_64 *)seg;
-        seg64->vmaddr = 0xFFFFC000;
-        seg64->vmsize = 0x4000;
-    } else if (cmd->cmd == LC_SEGMENT) {
-        struct segment_command *seg32 = (struct segment_command *)seg;
-        seg32->vmaddr = 0xFFFFC000;
-        seg32->vmsize = 0x4000;
-    }
-    dlb_write_bytes(obj_file, offset, sizeofseg, seg);
-}
-
-static void dlb_patch_dyldinfo(FILE *file,
-                               off_t offset,
-                               struct dyld_info_command *dyldinfo) {
-    if (dyldinfo->rebase_off != 0) {
-        for (int i = 0; i < (int)dyldinfo->rebase_size; i++) {
-            uint8_t *bytes =
-                dlb_load_bytes(file, offset + dyldinfo->rebase_off + i, sizeof(uint8_t));
-            if ((*bytes & REBASE_OPCODE_MASK) ==
-                REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB) {
-                // __PAGEZERO is remapped (not removed), so segment indices are
-                // unchanged and the opcodes must NOT be shifted. Decrementing
-                // id shifts a valid __DATA(2) reference to __TEXT(1).
-                free(bytes);
-                break;
-            }
-            free(bytes);
+    uint64_t minSectionOffset = UINT64_MAX;
+    uint32_t off = 0;
+    for (uint32_t i = 0; i < mh.ncmds; i++) {
+        struct load_command *cmd = (struct load_command *)(lc + off);
+        if (mh.sizeofcmds - off < sizeof(*cmd) || cmd->cmdsize < sizeof(*cmd) ||
+            cmd->cmdsize > mh.sizeofcmds - off) {
+            NSLog(@"[dylibify] malformed load command %u", i);
+            free(lc);
+            return -1;
         }
-    }
-    if (dyldinfo->bind_off != 0) {
-        for (int i = 0; i < (int)dyldinfo->bind_size; i++) {
-            uint8_t *bytes =
-                dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
-            switch (*bytes & BIND_OPCODE_MASK) {
-                case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    // __PAGEZERO remap keeps segment indices intact; do not
-                    // shift __DATA(2) -> __TEXT(1) (non-writable).
-                    dlb_write_bytes(file, offset + dyldinfo->bind_off + i,
-                                    sizeof(uint8_t), bytes);
-                    {
-                        uint8_t *probe = dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
-                        while (*probe != BIND_OPCODE_DO_BIND) {
-                            i += 1;
-                            free(probe);
-                            probe = dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
-                        }
-                        free(probe);
-                    }
-                    break;
-                case BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM:
-                    while (*bytes != 0) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                case BIND_OPCODE_ADD_ADDR_ULEB:
-                    while (*bytes != BIND_OPCODE_DO_BIND) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                default:
-                    break;
+        if (cmd->cmd == LC_SEGMENT_64 && cmd->cmdsize >= sizeof(struct segment_command_64)) {
+            struct segment_command_64 *seg = (struct segment_command_64 *)cmd;
+            if (!strcmp(seg->segname, "__PAGEZERO")) {
+                seg->vmaddr = 0xFFFFC000;
+                seg->vmsize = 0x4000;
             }
-            free(bytes);
-        }
-    }
-    if (dyldinfo->lazy_bind_off != 0) {
-        for (int i = 0; i < (int)dyldinfo->lazy_bind_size; i++) {
-            uint8_t *bytes =
-                dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
-            switch (*bytes & BIND_OPCODE_MASK) {
-                case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    // Segment indices unchanged (__PAGEZERO only remapped).
-                    dlb_write_bytes(file, offset + dyldinfo->lazy_bind_off + i,
-                                    sizeof(uint8_t), bytes);
-                    {
-                        uint8_t *probe = dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
-                        while (*probe != BIND_OPCODE_DO_BIND) {
-                            i += 1;
-                            free(probe);
-                            probe = dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
-                        }
-                        free(probe);
-                    }
-                    break;
-                case BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM:
-                    while (*bytes != 0) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                case BIND_OPCODE_ADD_ADDR_ULEB:
-                    while (*bytes != BIND_OPCODE_DO_BIND) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->lazy_bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                default:
-                    break;
+            uint32_t nsects = (cmd->cmdsize - sizeof(*seg)) / sizeof(struct section_64);
+            struct section_64 *sects = (struct section_64 *)(seg + 1);
+            for (uint32_t s = 0; s < seg->nsects && s < nsects; s++) {
+                if (sects[s].offset != 0 && sects[s].offset < minSectionOffset) {
+                    minSectionOffset = sects[s].offset;
+                }
             }
-            free(bytes);
         }
+        off += cmd->cmdsize;
     }
-    if (dyldinfo->weak_bind_off != 0) {
-        for (int i = 0; i < (int)dyldinfo->weak_bind_size; i++) {
-            uint8_t *bytes =
-                dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
-            switch (*bytes & BIND_OPCODE_MASK) {
-                case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                    // Segment indices unchanged (__PAGEZERO only remapped).
-                    dlb_write_bytes(file, offset + dyldinfo->weak_bind_off + i,
-                                    sizeof(uint8_t), bytes);
-                    {
-                        uint8_t *probe = dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
-                        while (*probe != BIND_OPCODE_DO_BIND) {
-                            i += 1;
-                            free(probe);
-                            probe = dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
-                        }
-                        free(probe);
-                    }
-                    break;
-                case BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM:
-                    while (*bytes != 0) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                case BIND_OPCODE_ADD_ADDR_ULEB:
-                    while (*bytes != BIND_OPCODE_DO_BIND) {
-                        i += 1;
-                        free(bytes);
-                        bytes = dlb_load_bytes(file, offset + dyldinfo->weak_bind_off + i, sizeof(uint8_t));
-                    }
-                    break;
-                default:
-                    break;
-            }
-            free(bytes);
-        }
+
+    if (minSectionOffset != UINT64_MAX &&
+        (uint64_t)sizeof(mh) + off + idSize > minSectionOffset) {
+        NSLog(@"[dylibify] not enough header padding to add LC_ID_DYLIB to %s", name);
+        free(lc);
+        return -1;
     }
+
+    struct dylib_command *idCmd = (struct dylib_command *)(lc + off);
+    idCmd->cmd = LC_ID_DYLIB;
+    idCmd->cmdsize = idSize;
+    idCmd->dylib.name.offset = sizeof(struct dylib_command);
+    idCmd->dylib.timestamp = 1;
+    snprintf((char *)idCmd + sizeof(*idCmd), idPathLen, "@executable_path/%s", name);
+
+    mh.filetype = MH_DYLIB;
+    mh.flags |= MH_NO_REEXPORTED_DYLIBS;
+    mh.ncmds += 1;
+    mh.sizeofcmds += idSize;
+
+    fseeko(file, slice_offset, SEEK_SET);
+    int ok = fwrite(&mh, sizeof(mh), 1, file) == 1 && fwrite(lc, mh.sizeofcmds, 1, file) == 1;
+    free(lc);
+    return ok ? 0 : -1;
 }
 
 int dylibify(const char *macho, const char *saveto) {
@@ -267,156 +117,31 @@ int dylibify(const char *macho, const char *saveto) {
         return -1;
     }
 
+    const char *name = [[@(saveto) lastPathComponent] UTF8String];
     int rc = 0;
-    size_t offset = 0;
-    BOOL copied = false;
-    int ncmds = 0;
-    struct load_command *cmd = NULL;
-    uint32_t *magic = dlb_load_bytes(file, offset, sizeof(uint32_t));
-
-    if (*magic == 0xFEEDFACF) {
-        struct mach_header_64 *mh64 = dlb_load_bytes(file, offset, sizeof(struct mach_header_64));
-        off_t header_offset = offset;
-        dlb_patch_mach_header(file, offset, mh64, true);
-        offset += sizeof(struct mach_header_64);
-        ncmds = mh64->ncmds;
-        free(mh64);
-
-        for (int i = 0; i < ncmds; i++) {
-            cmd = dlb_load_bytes(file, offset, sizeof(struct load_command));
-            if (cmd->cmd == LC_SEGMENT_64) {
-                struct segment_command_64 *seg64 =
-                    dlb_load_bytes(file, offset, sizeof(struct segment_command_64));
-                if (!strcmp(seg64->segname, "__PAGEZERO")) {
-                    dlb_patch_pagezero(file, offset, cmd, copied, seg64,
-                                       sizeof(struct segment_command_64), saveto);
-                }
-                free(seg64);
-            } else if (cmd->cmd == LC_DYLD_INFO_ONLY) {
-                struct dyld_info_command *dyldinfo =
-                    dlb_load_bytes(file, offset, sizeof(struct dyld_info_command));
-                dlb_patch_dyldinfo(file, 0, dyldinfo);
-                free(dyldinfo);
-            }
-            offset += cmd->cmdsize;
-            free(cmd);
-        }
-        dlb_append_dylib_id_command(file, header_offset, offset, true, saveto);
-    } else if (*magic == 0xFEEDFACE) {
-        struct mach_header *mh = dlb_load_bytes(file, offset, sizeof(struct mach_header));
-        off_t header_offset = offset;
-        dlb_patch_mach_header(file, offset, mh, false);
-        offset += sizeof(struct mach_header);
-        ncmds = mh->ncmds;
-        free(mh);
-
-        for (int i = 0; i < ncmds; i++) {
-            cmd = dlb_load_bytes(file, offset, sizeof(struct load_command));
-            if (cmd->cmd == LC_SEGMENT) {
-                struct segment_command *seg =
-                    dlb_load_bytes(file, offset, sizeof(struct segment_command));
-                if (!strcmp(seg->segname, "__PAGEZERO")) {
-                    dlb_patch_pagezero(file, offset, cmd, copied, seg,
-                                       sizeof(struct segment_command), saveto);
-                }
-                free(seg);
-            } else if (cmd->cmd == LC_DYLD_INFO_ONLY) {
-                struct dyld_info_command *dyldinfo =
-                    dlb_load_bytes(file, offset, sizeof(struct dyld_info_command));
-                dlb_patch_dyldinfo(file, 0, dyldinfo);
-                free(dyldinfo);
-            }
-            offset += cmd->cmdsize;
-            free(cmd);
-        }
-        dlb_append_dylib_id_command(file, header_offset, offset, false, saveto);
-    } else if (*magic == 0xBEBAFECA) {
-        size_t arch_offset = sizeof(struct fat_header);
-        struct fat_header *fat = dlb_load_bytes(file, offset, sizeof(struct fat_header));
-        struct fat_arch *arch = dlb_load_bytes(file, arch_offset, sizeof(struct fat_arch));
-        int n = DLB_SWAP32(fat->nfat_arch);
-
-        while (n-- > 0) {
-            offset = DLB_SWAP32(arch->offset);
-            free(magic);
-            magic = dlb_load_bytes(file, offset, sizeof(uint32_t));
-
-            if (*magic == 0xFEEDFACF) {
-                struct mach_header_64 *mh64 =
-                    dlb_load_bytes(file, offset, sizeof(struct mach_header_64));
-                off_t header_offset = offset;
-                dlb_patch_mach_header(file, offset, mh64, true);
-                offset += sizeof(struct mach_header_64);
-                ncmds = mh64->ncmds;
-                free(mh64);
-
-                for (int i = 0; i < ncmds; i++) {
-                    cmd = dlb_load_bytes(file, offset, sizeof(struct load_command));
-                    if (cmd->cmd == LC_SEGMENT_64) {
-                        struct segment_command_64 *seg64 =
-                            dlb_load_bytes(file, offset, sizeof(struct segment_command_64));
-                        if (!strcmp(seg64->segname, "__PAGEZERO")) {
-                            dlb_patch_pagezero(file, offset, cmd, copied, seg64,
-                                               sizeof(struct segment_command_64), saveto);
-                            copied = true;
-                        }
-                        free(seg64);
-                    } else if (cmd->cmd == LC_DYLD_INFO_ONLY) {
-                        struct dyld_info_command *dyldinfo =
-                            dlb_load_bytes(file, offset, sizeof(struct dyld_info_command));
-                        dlb_patch_dyldinfo(file, DLB_SWAP32(arch->offset), dyldinfo);
-                        free(dyldinfo);
-                    }
-                    offset += cmd->cmdsize;
-                    free(cmd);
-                }
-                dlb_append_dylib_id_command(file, header_offset, offset, true, saveto);
-            } else if (*magic == 0xFEEDFACE) {
-                struct mach_header *mh =
-                    dlb_load_bytes(file, offset, sizeof(struct mach_header));
-                off_t header_offset = offset;
-                dlb_patch_mach_header(file, offset, mh, false);
-                offset += sizeof(struct mach_header);
-                ncmds = mh->ncmds;
-                free(mh);
-
-                for (int i = 0; i < ncmds; i++) {
-                    cmd = dlb_load_bytes(file, offset, sizeof(struct load_command));
-                    if (cmd->cmd == LC_SEGMENT) {
-                        struct segment_command *seg =
-                            dlb_load_bytes(file, offset, sizeof(struct segment_command));
-                        if (!strcmp(seg->segname, "__PAGEZERO")) {
-                            dlb_patch_pagezero(file, offset, cmd, copied, seg,
-                                               sizeof(struct segment_command), saveto);
-                            copied = true;
-                        }
-                        free(seg);
-                    } else if (cmd->cmd == LC_DYLD_INFO_ONLY) {
-                        struct dyld_info_command *dyldinfo =
-                            dlb_load_bytes(file, offset, sizeof(struct dyld_info_command));
-                        dlb_patch_dyldinfo(file, DLB_SWAP32(arch->offset), dyldinfo);
-                        free(dyldinfo);
-                    }
-                    offset += cmd->cmdsize;
-                    free(cmd);
-                }
-                dlb_append_dylib_id_command(file, header_offset, offset, false, saveto);
-            } else {
-                NSLog(@"[dylibify] unrecognised arch magic 0x%x", *magic);
-            }
-            arch_offset += sizeof(struct fat_arch);
-            free(arch);
-            arch = dlb_load_bytes(file, arch_offset, sizeof(struct fat_arch));
-        }
-
-        free(fat);
-        free(arch);
-    } else {
-        NSLog(@"[dylibify] unrecognised magic 0x%x", *magic);
+    uint32_t magic = 0;
+    if (fread(&magic, sizeof(magic), 1, file) != 1) {
         rc = -1;
+    } else if (magic == 0xBEBAFECA) {
+        struct fat_header fat;
+        fseeko(file, 0, SEEK_SET);
+        if (fread(&fat, sizeof(fat), 1, file) != 1) {
+            rc = -1;
+        }
+        uint32_t n = rc ? 0 : DLB_SWAP32(fat.nfat_arch);
+        for (uint32_t i = 0; i < n && rc == 0; i++) {
+            struct fat_arch arch;
+            fseeko(file, sizeof(fat) + (off_t)i * sizeof(arch), SEEK_SET);
+            if (fread(&arch, sizeof(arch), 1, file) != 1) {
+                rc = -1;
+                break;
+            }
+            rc = patch_slice(file, DLB_SWAP32(arch.offset), name);
+        }
+    } else {
+        rc = patch_slice(file, 0, name);
     }
 
-    free(magic);
     fclose(file);
     return rc;
 }
