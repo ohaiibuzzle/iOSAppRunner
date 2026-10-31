@@ -12,7 +12,9 @@ struct BaseiOSAppHostApp: App {
     @StateObject private var model = HostModel()
 
     var body: some Scene {
-        WindowGroup {
+        // One window: menus act on the shared selection, so a second window
+        // would have them target whichever list was clicked last.
+        Window("iOS App Loader", id: "main") {
             ContentView()
                 .environmentObject(model)
         }
@@ -73,12 +75,12 @@ struct HostCommands: Commands {
                 model.compatSheetApp = model.selection
             }
             .keyboardShortcut("i")
-            .disabled(model.selection == nil)
+            .disabled(model.selection == nil || model.isWorking)
 
             Button("Reset Keychain…") {
                 model.keychainResetConfirmApp = model.selection
             }
-            .disabled(model.selection == nil)
+            .disabled(model.selection == nil || model.isWorking)
 
             Divider()
 
@@ -90,10 +92,19 @@ struct HostCommands: Commands {
 
             Divider()
 
+            Button("Kill All Runtimes…", role: .destructive) {
+                model.confirmKillRuntimes = true
+            }
+            .disabled(model.isWorking)
+        }
+
+        #if DEBUG
+        CommandMenu("Debug") {
             Button("Reset All Keychain Items…", role: .destructive) {
                 model.confirmKeychainReset = true
             }
             .disabled(model.isWorking)
         }
+        #endif
     }
 }

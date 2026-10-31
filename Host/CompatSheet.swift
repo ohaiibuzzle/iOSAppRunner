@@ -35,19 +35,7 @@ struct CompatSettingsView: View {
                 }
 
                 Section {
-                    ForEach(HostFeature.all) { feature in
-                        Toggle(isOn: Binding(
-                            get: { model.featureEnabled(feature.id, for: app) },
-                            set: { model.setFeature(feature.id, enabled: $0, for: app) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(feature.name)
-                                Text(feature.detail)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
+                    ForEach(HostFeature.all) { featureToggle($0) }
                 } header: {
                     Text("Compatibility")
                 } footer: {
@@ -57,6 +45,14 @@ struct CompatSettingsView: View {
                 if model.featureEnabled("deviceSpoof", for: app) {
                     DeviceSpoofFields(app: app)
                         .environmentObject(model)
+                }
+
+                Section {
+                    ForEach(HostFeature.importOnly) { featureToggle($0) }
+                } header: {
+                    Text("Import")
+                } footer: {
+                    Text("Applies the next time this app is imported.")
                 }
             }
             .formStyle(.grouped)
@@ -83,6 +79,20 @@ struct CompatSettingsView: View {
             .padding()
         }
     }
+
+    private func featureToggle(_ feature: HostFeature) -> some View {
+        Toggle(isOn: Binding(
+            get: { model.featureEnabled(feature.id, for: app) },
+            set: { model.setFeature(feature.id, enabled: $0, for: app) }
+        )) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(feature.name)
+                Text(feature.detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
 }
 
 /// Customizable device identity shown when the "Spoof device (sysctl)" hook
@@ -100,26 +110,31 @@ struct DeviceSpoofFields: View {
 
     var body: some View {
         Section {
+            // Placeholders show what an empty field means; captions show
+            // the real Mac's value for reference.
             spoofField("Machine (hw.machine)",
                        key: DeviceSpoofConfig.machineKey,
-                       hint: String(localized: "Real: \(realMachine)"))
+                       placeholder: DeviceSpoofConfig.defaultMachine,
+                       hint: String(localized: "This Mac: \(realMachine)"))
             spoofField("Model (hw.model)",
                        key: DeviceSpoofConfig.modelKey,
-                       hint: String(localized: "Real: \(realModel); empty = same as machine"))
+                       placeholder: String(localized: "Same as machine"),
+                       hint: String(localized: "This Mac: \(realModel)"))
             spoofField("iOS version (kern.osproductversion)",
                        key: DeviceSpoofConfig.osVersionKey,
-                       hint: String(localized: "Real: \(realOSVersion)"))
+                       placeholder: realOSVersion,
+                       hint: String(localized: "Empty reports this Mac's version"))
         } header: {
             Text("Device identity")
         } footer: {
-            Text("Values returned by sysctl/sysctlbyname. Defaults to real device's values")
+            Text("Values returned by sysctl/sysctlbyname. Leave a field empty to use the value shown in it.")
         }
     }
 
-    private func spoofField(_ title: String, key: String, hint: String) -> some View {
+    private func spoofField(_ title: String, key: String, placeholder: String, hint: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-            TextField(hint, text: Binding(
+            TextField(placeholder, text: Binding(
                 get: { model.spoofOverride(key, for: app) },
                 set: { model.setSpoofOverride(key, value: $0, for: app) }
             ))

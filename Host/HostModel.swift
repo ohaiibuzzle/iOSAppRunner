@@ -23,22 +23,30 @@ final class HostModel: ObservableObject {
     @Published var apps: [InstalledApp] = []
     @Published var isWorking: Bool = false
     @Published var status: String = ""
-    @Published var errorMessage: String?
+    /// Setting an error clears the toast so a stale "Launching…" can't show
+    /// up next to a success checkmark.
+    @Published var errorMessage: String? {
+        didSet { if errorMessage != nil { status = "" } }
+    }
 
     /// List selection (drives the Guest menu commands).
     @Published var selection: InstalledApp?
 
     // UI state shared between the window and the menu-bar commands.
-    @Published var pendingImportURLs: [URL]?
     @Published var compatSheetApp: InstalledApp?
     @Published var deleteConfirmApp: InstalledApp?
     @Published var keychainResetConfirmApp: InstalledApp?
     @Published var confirmKeychainReset: Bool = false
+    @Published var confirmKillRuntimes: Bool = false
 
     /// Cached per-app render data (runtime mode + icon). Refreshed off the
     /// main thread in reload(); keyed by install name (InstalledApp.id).
     @Published var runtimeModes: [String: RuntimeMode] = [:]
     @Published var icons: [String: NSImage] = [:]
+
+    /// Earliest provisioning-profile expiry of the host and runtimes;
+    /// refreshed in reload() to drive the rebuild warning.
+    @Published var signingExpiry: Date?
 
     /// Reveals a runtime's container Data folder in Finder, falling back to
     /// the nearest existing ancestor.
@@ -59,11 +67,10 @@ final class HostModel: ObservableObject {
         GuestPaths.ensureAppsDirectory()
         primeRuntimeContainersIfNeeded()
         Task {
-            let scan = await Task.detached(priority: .userInitiated) {
-                // One-time legacy-container move; idempotent.
-                GuestStore.migrateLegacyIfNeeded()
-                return Self.scanApps()
+            let (scan, expiry) = await Task.detached(priority: .userInitiated) {
+                return (Self.scanApps(), RuntimeLauncher.earliestSigningExpiry())
             }.value
+            signingExpiry = expiry
             apps = scan.apps
             runtimeModes = scan.runtimeModes
             icons = scan.icons
@@ -135,7 +142,6 @@ final class HostModel: ObservableObject {
                 iconPath: findIcon(in: url, plist: plist)
             )
             result.append(app)
-            GuestStore.enforceRequiredFeatures(for: url)
             modes[app.id] = GuestStore.runtimeMode(for: url)
             if let iconPath = app.iconPath {
                 icons[app.id] = NSImage(contentsOfFile: iconPath)
@@ -164,8 +170,8 @@ final class HostModel: ObservableObject {
         }
     }
 
-    /// Opens the standard open panel (⌘O / toolbar) and stages the picked
-    /// IPAs for the import-options sheet.
+    /// Opens the standard open panel (⌘O / toolbar) and imports the picked
+    /// IPAs right away.
     func pickAndImportIPAs() {
         let panel = NSOpenPanel()
         panel.title = String(localized: "Import IPAs")
@@ -175,13 +181,14 @@ final class HostModel: ObservableObject {
         panel.canChooseFiles = true
         panel.begin { [weak self] response in
             guard response == .OK, let self, !panel.urls.isEmpty else { return }
-            self.pendingImportURLs = panel.urls
+            Task { await self.importIPAs(panel.urls) }
         }
     }
 
     /// Imports a batch of IPAs sequentially; a failed IPA doesn't abort the
     /// batch. Failures are collected and reported in one aggregated error.
-    func importIPAs(_ urls: [URL], importFeatures: [String: Bool]) async {
+    func importIPAs(_ urls: [URL]) async {
+        guard !isWorking else { return }
         isWorking = true
         errorMessage = nil
         defer {
@@ -196,7 +203,7 @@ final class HostModel: ObservableObject {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 let installed = try await Task.detached(priority: .userInitiated) {
-                    try GuestStore.install(from: url, importFeatures: importFeatures)
+                    try GuestStore.install(from: url)
                 }.value
                 status = String(localized: "Imported \(installed)")
             } catch {
@@ -216,13 +223,18 @@ final class HostModel: ObservableObject {
     /// Full guest cleanup: guest bundle, data directory, legacy queued
     /// artifacts, and keychain slot (wiped + reclaimed).
     func deleteWithCleanup(_ app: InstalledApp) {
+        guard !isWorking else { return }
         isWorking = true
         Task {
-            let summary = await Task.detached(priority: .userInitiated) {
-                GuestStore.deleteWithCleanup(bundleID: app.bundleIdentifier, appURL: app.url)
-            }.value
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try GuestStore.deleteWithCleanup(bundleID: app.bundleIdentifier, appURL: app.url)
+                }.value
+                status = String(localized: "Deleted \(app.displayName)")
+            } catch {
+                errorMessage = String(localized: "Could not delete \(app.displayName): \(error.localizedDescription)")
+            }
             isWorking = false
-            status = summary
             reload()
         }
     }
@@ -231,6 +243,7 @@ final class HostModel: ObservableObject {
     /// polling for seconds); the launcher reads the mode from the bundle's
     /// actual residence, never a UI-cached URL.
     func launch(_ app: InstalledApp) {
+        guard !isWorking else { return }
         let installName = app.id
         let bundleID = app.bundleIdentifier
 
@@ -283,11 +296,15 @@ final class HostModel: ObservableObject {
         isWorking = true
         status = String(localized: "Resetting \(app.displayName) keychain…")
         Task {
-            let summary = await Task.detached(priority: .userInitiated) {
-                KeychainManager.resetKeychain(bundleID: bid)
-            }.value
+            do {
+                let slot = try await Task.detached(priority: .userInitiated) {
+                    try KeychainManager.resetKeychain(bundleID: bid)
+                }.value
+                status = String(localized: "Reset keychain (slot \(slot))")
+            } catch {
+                errorMessage = String(localized: "Could not reset keychain: \(error.localizedDescription)")
+            }
             isWorking = false
-            status = summary
         }
     }
 
@@ -337,19 +354,16 @@ final class HostModel: ObservableObject {
     func applyRuntimeSelection(for app: InstalledApp) {
         let installName = app.id
         let bundleID = app.bundleIdentifier
+        guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
+            errorMessage = String(localized: "Could not find \(installName) in either runtime container.")
+            return
+        }
+        let target: RuntimeFlavor = GuestStore.runtimeMode(for: located.url) == .ios ? .ios : .catalyst
+        // Closing the sheet without switching runtimes is not a migration.
+        guard located.flavor != target else { return }
         isWorking = true
         status = String(localized: "Moving \(app.displayName) between runtime containers…")
         Task.detached(priority: .userInitiated) { [weak self] in
-            guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
-                await MainActor.run { [weak self] in
-                    self?.isWorking = false
-                    self?.errorMessage = String(localized:
-                        "Could not find \(installName) in either runtime container.")
-                }
-                return
-            }
-            let mode = GuestStore.runtimeMode(for: located.url)
-            let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
             do {
                 // Prime first or the migration lands in the stale
                 // bundle-ID-named container.
@@ -390,20 +404,11 @@ final class HostModel: ObservableObject {
     /// Writes a string override; empty removes the key (hooks fall back to
     /// their built-in default).
     func setSpoofOverride(_ key: String, value: String, for app: InstalledApp) {
-        var plist = GuestStore.readRunnerFeatures(for: app.url) ??
-            Dictionary(uniqueKeysWithValues: HostFeature.defaultValues.map { ($0, $1) })
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            plist.removeValue(forKey: key)
-        } else {
-            plist[key] = trimmed
-        }
-        if let out = try? PropertyListSerialization.data(fromPropertyList: plist,
-                                                         format: .xml,
-                                                         options: 0) {
-            try? out.write(to: app.url.appendingPathComponent("RunnerFeatures.plist"))
-            objectWillChange.send()
-        }
+        GuestStore.writeRunnerFeatures(trimmed.isEmpty ? [:] : [key: trimmed],
+                                       remove: trimmed.isEmpty ? [key] : [],
+                                       defaults: HostFeature.defaultValues, for: app.url)
+        objectWillChange.send()
     }
 
     // MARK: - Helpers

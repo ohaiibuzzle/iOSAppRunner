@@ -21,6 +21,21 @@ struct ContentView: View {
                 installedAppsSection
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
+            // Native double-click / Return launch; per-row tap gestures
+            // fought with list selection.
+            .contextMenu(forSelectionType: InstalledApp.self) { apps in
+                if let app = apps.first { rowActions(app) }
+            } primaryAction: { apps in
+                if let app = apps.first { model.launch(app) }
+            }
+            .overlay { emptyState }
+            .dropDestination(for: URL.self) { urls, _ in
+                let ipas = urls.filter { $0.pathExtension.lowercased() == "ipa" }
+                guard !ipas.isEmpty, !model.isWorking else { return false }
+                Task { await model.importIPAs(ipas) }
+                return true
+            }
+            .safeAreaInset(edge: .top) { signingBanner }
 
             StatusToast()
         }
@@ -59,28 +74,42 @@ struct ContentView: View {
         }
     }
 
+    /// Free Apple ID profiles lapse weekly; warn while a rebuild is still
+    /// possible from inside the app's working window.
+    @ViewBuilder
+    private var signingBanner: some View {
+        if let expiry = model.signingExpiry, expiry.timeIntervalSinceNow < 2 * 24 * 60 * 60 {
+            Label("Signing expires \(expiry.formatted(.relative(presentation: .named))). Rebuild the app with the same Apple ID.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(.yellow.opacity(0.2))
+        }
+    }
+
     @ViewBuilder
     private var installedAppsSection: some View {
-        Section("Installed apps") {
-            if model.apps.isEmpty {
-                Text("No apps installed yet.\nImport an IPA with ⌘O or the + button.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            } else {
+        if !model.apps.isEmpty {
+            Section("Installed apps") {
                 ForEach(model.apps) { app in
                     AppRow(app: app, model: model)
                         .tag(app)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            model.launch(app)
-                        }
-                        .contextMenu {
-                            rowActions(app)
-                        }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if model.apps.isEmpty {
+            ContentUnavailableView {
+                Label("No Apps", systemImage: "square.and.arrow.down")
+            } description: {
+                Text("Drop IPA files here, or import them with ⌘O.")
+            } actions: {
+                Button("Import IPAs…") { model.pickAndImportIPAs() }
+                    .disabled(model.isWorking)
             }
         }
     }
@@ -88,27 +117,19 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                model.killRuntimes()
+                if let app = selection { model.launch(app) }
             } label: {
-                Label("Kill Runtimes", systemImage: "xmark.octagon")
+                Label("Launch", systemImage: "play.fill")
             }
-            .help("Terminate every running runtime process (stops running guests)")
-            .disabled(model.isWorking)
+            .help("Launch the selected app (⌘L or Return)")
+            .disabled(selection == nil || model.isWorking)
 
             Button {
                 model.pickAndImportIPAs()
             } label: {
                 Label("Import IPAs", systemImage: "plus")
             }
-            .help("Import IPAs (⌘O)")
-            .disabled(model.isWorking)
-
-            Button {
-                model.reload()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .help("Refresh (⌘R)")
+            .help("Import IPAs (⌘O), or drop them onto the window")
             .disabled(model.isWorking)
         }
     }
@@ -120,16 +141,6 @@ struct ContentView: View {
 
         func body(content: Content) -> some View {
             content
-                // Import options sheet (staged by the open panel).
-                .sheet(isPresented: Binding(
-                    get: { model.pendingImportURLs != nil },
-                    set: { if !$0 { model.pendingImportURLs = nil } }
-                )) {
-                    if let urls = model.pendingImportURLs {
-                        ImportOptionsView(urls: urls)
-                            .environmentObject(model)
-                    }
-                }
                 // Committing the runtime selection (migrating the guest into
                 // the selected flavor's container) happens in onDisappear,
                 // which fires on every dismissal path.
@@ -147,6 +158,7 @@ struct ContentView: View {
                 .modifier(DeleteAppAlert())
                 .modifier(ResetKeychainAlert())
                 .modifier(ResetAllKeychainAlert())
+                .modifier(KillRuntimesAlert())
                 .modifier(ErrorAlert())
         }
     }
@@ -217,6 +229,24 @@ struct ContentView: View {
         }
     }
 
+    private struct KillRuntimesAlert: ViewModifier {
+        @EnvironmentObject private var model: HostModel
+
+        func body(content: Content) -> some View {
+            content.alert(
+                "Kill all runtimes?",
+                isPresented: $model.confirmKillRuntimes
+            ) {
+                Button("Kill All", role: .destructive) {
+                    model.killRuntimes()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Every running app is force-quit immediately. Unsaved progress is lost.")
+            }
+        }
+    }
+
     private struct ErrorAlert: ViewModifier {
         @EnvironmentObject private var model: HostModel
 
@@ -237,10 +267,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private func rowActions(_ app: InstalledApp) -> some View {
-        Button("Launch") { model.launch(app) }
-        Button("Compatibility Settings…") { model.compatSheetApp = app }
-        Button("Reset Keychain…") { model.keychainResetConfirmApp = app }
-        Divider()
-        Button("Delete…", role: .destructive) { model.deleteConfirmApp = app }
+        Group {
+            Button("Launch") { model.launch(app) }
+            Button("Compatibility Settings…") { model.compatSheetApp = app }
+            Button("Reset Keychain…") { model.keychainResetConfirmApp = app }
+            Divider()
+            Button("Delete…", role: .destructive) { model.deleteConfirmApp = app }
+        }
+        .disabled(model.isWorking)
     }
 }
