@@ -96,15 +96,11 @@ struct HostCommands: Commands {
                 model.confirmKillRuntimes = true
             }
             .disabled(model.isWorking)
-        }
 
-        #if DEBUG
-        CommandMenu("Debug") {
             Button("Reset All Keychain Items…", role: .destructive) {
                 model.confirmKeychainReset = true
             }
             .disabled(model.isWorking)
         }
-        #endif
     }
 }
