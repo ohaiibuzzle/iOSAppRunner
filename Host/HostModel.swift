@@ -307,7 +307,7 @@ final class HostModel: ObservableObject {
                 guard let self else { return }
                 self.isWorking = false
                 if killed > 0 {
-                    self.status = String(localized: "Killed \(killed) runtime process\(killed == 1 ? "" : "es")")
+                    self.status = String(localized: "Killed \(killed) runtime processes")
                 } else {
                     self.postInfo(String(localized: "No runtime processes were running"))
                 }

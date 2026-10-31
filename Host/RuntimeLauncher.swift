@@ -243,10 +243,11 @@ enum RuntimeLauncher {
               located.flavor.displayName as NSString)
         guard located.flavor == flavor else {
             return LaunchOutcome(ok: false, message:
-                String(localized:
-                    "\(displayName) is set to the \(flavor.displayName) runtime, but its data still resides in the \(located.flavor.displayName) container.")
-                + String(localized:
-                    " Open its Compatibility Settings and close the sheet to finish the switch."))
+                String(localized: """
+                    \(displayName) is set to the \(flavor.displayName) runtime, but its data still resides in the \
+                    \(located.flavor.displayName) container. Open its Compatibility Settings and close the sheet \
+                    to finish the switch.
+                    """))
         }
 
         // The iOS runtime's UUID-named container may not exist yet on a fresh
