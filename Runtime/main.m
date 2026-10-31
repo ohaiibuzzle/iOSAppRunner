@@ -192,8 +192,10 @@ int main(int argc, char * argv[]) {
 
     setenv("HOME", guestHomeDir.UTF8String, 1);
     setenv("CFFIXED_USER_HOME", guestHomeDir.UTF8String, 1);
+    // Per-guest temp dir: the container's Data/tmp is shared by every guest.
+    setenv("TMPDIR", [guestHomeDir stringByAppendingPathComponent:@"tmp/"].UTF8String, 1);
 
-    NSArray *dirList = @[@"Library/Caches", @"Library/Cookies", @"Documents", @"SystemData"];
+    NSArray *dirList = @[@"Library/Caches", @"Library/Cookies", @"Documents", @"SystemData", @"tmp"];
     for (NSString *dir in dirList) {
         NSString *dirPath = [guestHomeDir stringByAppendingPathComponent:dir];
         if (![[NSFileManager defaultManager] fileExistsAtPath:dirPath]) {
