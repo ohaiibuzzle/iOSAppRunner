@@ -168,13 +168,6 @@ enum GuestPaths {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Pre-split shared container; emptied by migrateLegacyIfNeeded().
-    static var legacyContainerDirectory: URL {
-        let bundleID = infoString("LegacyRuntimeBundleIdentifier") ?? hostDerivedBaseID
-        return baseContainersDirectory.appendingPathComponent(bundleID, isDirectory: true)
-            .appendingPathComponent("Data", isDirectory: true)
-    }
-
     private static var baseContainersDirectory: URL {
         URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
             .appendingPathComponent("Library", isDirectory: true)
@@ -195,22 +188,6 @@ enum GuestPaths {
     static func displayResolutionFile(for flavor: RuntimeFlavor) -> URL {
         containerDirectory(for: flavor).appendingPathComponent("display_resolution.plist")
     }
-
-    /// Legacy request files from the old queue-based launcher; cleaned up so
-    /// stale requests can't launch a guest under the new headless runtimes.
-    static func appToLaunchFile(for flavor: RuntimeFlavor) -> URL {
-        containerDirectory(for: flavor).appendingPathComponent("app_to_launch.txt")
-    }
-
-    static func pendingLaunchDirectory(for flavor: RuntimeFlavor) -> URL {
-        containerDirectory(for: flavor).appendingPathComponent("pending_launch", isDirectory: true)
-    }
-
-    /// Default residence for fresh installs — no prior copy of the guest in
-    /// either container. Re-installs resolve the residence from the existing
-    /// install instead (see GuestStore.install).
-    static var containerDirectory: URL { containerDirectory(for: .catalyst) }
-    static var appsDirectory: URL { appsDirectory(for: .catalyst) }
 
     static func ensureAppsDirectory(for flavor: RuntimeFlavor) {
         try? FileManager.default.createDirectory(at: appsDirectory(for: flavor),
@@ -242,6 +219,7 @@ enum GuestPaths {
 enum MigrationError: LocalizedError {
     case guestRunning(String)
     case containerSetupFailed
+    case deleteWhileRunning(String)
 
     var errorDescription: String? {
         switch self {
@@ -249,6 +227,8 @@ enum MigrationError: LocalizedError {
             return String(localized: "\(name) is running; quit it before switching its runtime.")
         case .containerSetupFailed:
             return String(localized: "Could not set up the iOS runtime container; try again.")
+        case .deleteWhileRunning(let name):
+            return String(localized: "\(name) is running; quit it before deleting it.")
         }
     }
 }
@@ -259,9 +239,9 @@ extension GuestStore {
         flavor == .catalyst ? .ios : .catalyst
     }
 
-    /// Makes sure the guest (bundle + data + app-groups) lives in `target`'s
+    /// Makes sure the guest (bundle + data) lives in `target`'s
     /// container, migrating it from a source container (stale iOS, other
-    /// flavor, legacy — most authoritative first) when needed. Throws if the
+    /// flavor — most authoritative first) when needed. Throws if the
     /// guest is currently running.
     static func ensureGuestResides(installName: String,
                                    guestBundleID: String?,
@@ -274,7 +254,6 @@ extension GuestStore {
             sourceDatas.append(stale)
         }
         sourceDatas.append(GuestPaths.containerDirectory(for: otherFlavor(target)))
-        sourceDatas.append(GuestPaths.legacyContainerDirectory)
 
         // Home directories are named by bundle ID; fall back to the install name.
         let homeName = guestBundleID ?? installName.replacingOccurrences(of: ".app", with: "")
@@ -295,13 +274,6 @@ extension GuestStore {
                 try fm.createDirectory(at: targetData.appendingPathComponent("apps", isDirectory: true),
                                        withIntermediateDirectories: true)
                 try moveReplacing(source: sourceApps, destination: targetApps)
-                // Move per-container app-group state along unless the target
-                // already has one.
-                let sourceGroups = sourceData.appendingPathComponent("app-groups", isDirectory: true)
-                let targetGroups = targetData.appendingPathComponent("app-groups", isDirectory: true)
-                if fm.fileExists(atPath: sourceGroups.path), !fm.fileExists(atPath: targetGroups.path) {
-                    try? fm.moveItem(at: sourceGroups, to: targetGroups)
-                }
                 break
             }
         }
@@ -329,59 +301,6 @@ extension GuestStore {
         try? fm.removeItem(at: destination)
         try fm.moveItem(at: source, to: destination)
     }
-
-    // MARK: - Legacy (pre-split) container upgrade
-
-    /// Idempotent upgrade from the pre-split single-container layout: import
-    /// the keychain registry, move every guest into its flavor's container,
-    /// retire the emptied legacy directories. Runs on every host startup.
-    static func migrateLegacyIfNeeded() {
-        KeychainManager.importLegacyAssignmentsIfNeeded()
-
-        let fm = FileManager.default
-        let legacyData = GuestPaths.legacyContainerDirectory
-        let legacyApps = legacyData.appendingPathComponent("apps", isDirectory: true)
-        let names = ((try? fm.contentsOfDirectory(atPath: legacyApps.path)) ?? [])
-            .filter { $0.hasSuffix(".app") }
-
-        for name in names {
-            let bundleURL = legacyApps.appendingPathComponent(name)
-            let mode = runtimeMode(for: bundleURL)
-            let target: RuntimeFlavor = mode == .ios ? .ios : .catalyst
-            let bundleID = readInfoPlist(at: bundleURL)?["CFBundleIdentifier"] as? String
-            if fm.fileExists(atPath: GuestPaths.appsDirectory(for: target).appendingPathComponent(name).path) {
-                // Already migrated: the legacy copy is stale and would block
-                // retirement forever.
-                try? fm.removeItem(at: bundleURL)
-                continue
-            }
-            do {
-                try ensureGuestResides(installName: name,
-                                       guestBundleID: bundleID,
-                                       target: target)
-                let flavorName = target == .ios ? "iOS" : "Catalyst"
-                NSLog("[host] migrated %@ to the %@ runtime container",
-                      name as NSString, flavorName as NSString)
-            } catch {
-                NSLog("[host] legacy migration of %@ failed: %@",
-                      name as NSString, error.localizedDescription as NSString)
-            }
-        }
-        retireLegacyDirectories()
-    }
-
-    /// Removes legacy directories once empty; failed migrations retry next startup.
-    private static func retireLegacyDirectories() {
-        let fm = FileManager.default
-        for relative in ["apps", "app-groups"] {
-            let url = GuestPaths.legacyContainerDirectory.appendingPathComponent(relative, isDirectory: true)
-            let remaining = ((try? fm.contentsOfDirectory(atPath: url.path)) ?? [])
-                .filter { !$0.hasPrefix(".") }
-            if remaining.isEmpty, fm.fileExists(atPath: url.path) {
-                try? fm.removeItem(at: url)
-            }
-        }
-    }
 }
 
 // MARK: - Import / conversion errors
@@ -392,6 +311,8 @@ enum ImportError: LocalizedError {
     case missingExecutableName
     case dylibifyFailed(Int32)
     case replaceExecutableFailed(Error)
+    case invalidBundleID(String)
+    case conversionFailed([String])
 
     var errorDescription: String? {
         switch self {
@@ -403,6 +324,10 @@ enum ImportError: LocalizedError {
             return String(localized: "dylibify failed (rc=\(code)).")
         case .replaceExecutableFailed(let err):
             return String(localized: "Failed to swap the dylibified executable in: \(err.localizedDescription)")
+        case .invalidBundleID(let id):
+            return String(localized: "The app's bundle identifier \"\(id)\" is not a valid folder name.")
+        case .conversionFailed(let paths):
+            return String(localized: "Could not retarget \(paths.joined(separator: ", ")).")
         }
     }
 }
@@ -423,18 +348,11 @@ enum GuestStore {
     /// images, iOS loads those fine, so one pass serves both flavors. No
     /// codesign step: the runtimes' LCDyld hooks let dyld load unsigned
     /// binaries.
-    static func convert(bundleURL: URL, importFeatures: [String: Bool]) throws {
+    static func convert(bundleURL: URL) throws {
         let fm = FileManager.default
 
         // 1. Find the main executable via Info.plist.
-        let plistURL = bundleURL.appendingPathComponent("Info.plist")
-        var execName: String?
-        if let data = try? Data(contentsOf: plistURL),
-           let plist = try? PropertyListSerialization.propertyList(from: data,
-                                                                   options: [],
-                                                                   format: nil) as? [String: Any] {
-            execName = plist["CFBundleExecutable"] as? String
-        }
+        let execName = readInfoPlist(at: bundleURL)?["CFBundleExecutable"] as? String
         guard let exec = execName, !exec.isEmpty else {
             throw ImportError.missingExecutableName
         }
@@ -463,15 +381,18 @@ enum GuestStore {
         // 3. Unquarantine (strip all xattrs recursively).
         _ = c_stripXattrsRecursive(bundleURL.path)
 
-        // 4. Merge the Import-sheet features into RunnerFeatures.plist.
-        GuestConversion.writeRunnerFeatures(bundleURL: bundleURL, importFeatures: importFeatures)
+        // 4. Fill RunnerFeatures.plist defaults (a re-import keeps its settings).
+        var defaults: [String: Any] = HostFeature.defaultValues
+        defaults["runtime"] = RuntimeMode.defaultMode.rawValue
+        writeRunnerFeatures([:], defaults: defaults, for: bundleURL)
 
         // 5. Legacy guests need a scene manifest or UIApplicationMain aborts
         //    under Catalyst; scene-native guests keep their own delegate.
         GuestConversion.injectSceneManifest(bundleURL: bundleURL)
 
         // 6. Retarget every loadable image to Catalyst + add the Swift rpath.
-        GuestConversion.retargetAllMachOImages(bundleURL: bundleURL)
+        let failed = GuestConversion.retargetAllMachOImages(bundleURL: bundleURL)
+        guard failed.isEmpty else { throw ImportError.conversionFailed(failed) }
     }
 
     /// Installs an IPA: extract, convert in scratch, move into the container
@@ -479,7 +400,7 @@ enum GuestStore {
     /// re-installs keep the existing residence — a cross-container install
     /// would strand the guest in two containers and trip the launcher's
     /// fail-closed residence check). Returns the installed bundle name.
-    static func install(from ipa: URL, importFeatures: [String: Bool]) throws -> String {
+    static func install(from ipa: URL) throws -> String {
         let fm = FileManager.default
         let scratch = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
@@ -502,6 +423,10 @@ enum GuestStore {
         // IPAs whose .app folders share a name can't collide on disk. Fall
         // back to the original folder name if the ID is missing/unusable.
         let bundleID = readInfoPlist(at: bundle)?["CFBundleIdentifier"] as? String
+        // The data folder is named by the raw ID; refuse anything that could escape it.
+        if let bundleID, bundleID.isEmpty || bundleID.contains("/") || bundleID == "." || bundleID == ".." {
+            throw ImportError.invalidBundleID(bundleID)
+        }
         let installName = sanitizedInstallName(bundleID) ?? bundle.lastPathComponent
 
         // Residence: existing install's container; Catalyst for fresh installs.
@@ -515,6 +440,10 @@ enum GuestStore {
            let data = try? Data(contentsOf: previous.url.appendingPathComponent("RunnerFeatures.plist")) {
             try? data.write(to: bundle.appendingPathComponent("RunnerFeatures.plist"))
         }
+
+        // Convert *before* anything is removed: a failed import must not
+        // destroy the existing install.
+        try convert(bundleURL: bundle)
 
         // Prime the iOS UUID container first or the bundle lands in the
         // stale bundle-ID-named one.
@@ -542,9 +471,6 @@ enum GuestStore {
             try? fm.removeItem(at: stale.appendingPathComponent("apps").appendingPathComponent(installName))
         }
 
-        // Convert *before* the bundle enters the container.
-        try convert(bundleURL: bundle, importFeatures: importFeatures)
-
         let destination = GuestPaths.appsDirectory(for: target).appendingPathComponent(installName)
         try fm.moveItem(at: bundle, to: destination)
         return installName
@@ -561,103 +487,58 @@ enum GuestStore {
     }
 
     /// Full guest cleanup: wipe + reclaim the keychain slot, remove guest
-    /// data from every container, clear legacy launch artifacts. Returns a
-    /// user-presentable summary.
-    static func deleteWithCleanup(bundleID: String?, appURL: URL) -> String {
-        var summary: String?
-
+    /// data from every container. Refuses while the guest runs.
+    static func deleteWithCleanup(bundleID: String?, appURL: URL) throws {
         if let bid = bundleID, !bid.isEmpty {
-            summary = KeychainManager.releaseSlot(bundleID: bid)
+            for flavor in [RuntimeFlavor.catalyst, .ios] {
+                let home = GuestPaths.guestHome(bid, in: flavor)
+                if FileManager.default.fileExists(atPath: home.path),
+                   GuestPaths.guestIsRunning(guestHome: home) {
+                    throw MigrationError.deleteWhileRunning(bid)
+                }
+            }
+            KeychainManager.releaseSlot(bundleID: bid)
 
             for flavor in [RuntimeFlavor.catalyst, .ios] {
                 let guestHome = GuestPaths.guestHome(bid, in: flavor).path
                 if FileManager.default.fileExists(atPath: guestHome) {
-                    do {
-                        try FileManager.default.removeItem(atPath: guestHome)
-                        summary = summary.map { String(localized: "\($0) Data removed.") }
-                            ?? String(localized: "Data removed.")
-                    } catch {
-                        return String(localized: "App deleted, but failed to remove guest data: \(error.localizedDescription)")
-                    }
+                    try FileManager.default.removeItem(atPath: guestHome)
                 }
             }
-
-            // Legacy queue files from the old launcher (all containers).
-            for flavor in [RuntimeFlavor.catalyst, .ios] {
-                try? FileManager.default.removeItem(at: GuestPaths.appToLaunchFile(for: flavor))
-                let pending = GuestPaths.pendingLaunchDirectory(for: flavor)
-                if let entries = try? FileManager.default.contentsOfDirectory(atPath: pending.path) {
-                    for entry in entries where entry.hasSuffix(".txt") {
-                        let url = pending.appendingPathComponent(entry)
-                        if let name = try? String(contentsOf: url, encoding: .utf8),
-                           name.trimmingCharacters(in: .whitespacesAndNewlines) == bid + ".app" {
-                            try? FileManager.default.removeItem(at: url)
-                        }
-                    }
-                }
-            }
-            // And the pre-split shared container.
-            let legacyHome = GuestPaths.legacyContainerDirectory.appendingPathComponent(bid, isDirectory: true).path
-            try? FileManager.default.removeItem(atPath: legacyHome)
         }
 
-        do {
-            try FileManager.default.removeItem(at: appURL)
-        } catch {
-            return String(localized: "Delete failed: \(error.localizedDescription)")
-        }
-        return summary ?? String(localized: "Deleted app")
+        try FileManager.default.removeItem(at: appURL)
     }
 
     // MARK: - RunnerFeatures.plist
 
+    static func readPlist(at url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]
+    }
+
+    static func writePlist(_ plist: [String: Any], to url: URL,
+                           format: PropertyListSerialization.PropertyListFormat = .xml,
+                           options: Data.WritingOptions = []) {
+        if let out = try? PropertyListSerialization.data(fromPropertyList: plist, format: format, options: 0) {
+            try? out.write(to: url, options: options)
+        }
+    }
+
     /// Reads a guest's RunnerFeatures.plist, or nil when absent.
     static func readRunnerFeatures(for appURL: URL) -> [String: Any]? {
-        let url = appURL.appendingPathComponent("RunnerFeatures.plist")
-        guard let data = try? Data(contentsOf: url),
-              let plist = try? PropertyListSerialization.propertyList(from: data,
-                                                                      options: [],
-                                                                      format: nil) as? [String: Any] else {
-            return nil
-        }
-        return plist
+        readPlist(at: appURL.appendingPathComponent("RunnerFeatures.plist"))
     }
 
-    /// Writes (merges) keys into a guest's RunnerFeatures.plist.
-    static func writeRunnerFeatures(_ update: [String: Any], for appURL: URL) {
+    /// Merges into a guest's RunnerFeatures.plist: `defaults` fill missing
+    /// keys only, `update` overrides, `remove` drops keys.
+    static func writeRunnerFeatures(_ update: [String: Any], remove: [String] = [],
+                                    defaults: [String: Any] = [:], for appURL: URL) {
         var plist = readRunnerFeatures(for: appURL) ?? [:]
-        for (key, value) in update {
-            plist[key] = value
-        }
-        if let out = try? PropertyListSerialization.data(fromPropertyList: plist,
-                                                         format: .xml,
-                                                         options: 0) {
-            try? out.write(to: appURL.appendingPathComponent("RunnerFeatures.plist"))
-        }
-    }
-
-    /// Features guests require to function at all; never user-disableable.
-    static let requiredFeatures: [String: Bool] = [
-        "keychain": true,
-        "groupContainer": true
-    ]
-
-    /// Re-enables required features in a guest's manifest; no-op when compliant.
-    static func enforceRequiredFeatures(for appURL: URL) {
-        guard let plist = readRunnerFeatures(for: appURL) else { return }
-        var changed = false
-        var repaired = plist
-        for (key, value) in requiredFeatures where (plist[key] as? Bool) != value {
-            repaired[key] = value
-            changed = true
-        }
-        guard changed else { return }
-        if let out = try? PropertyListSerialization.data(fromPropertyList: repaired,
-                                                         format: .xml,
-                                                         options: 0) {
-            try? out.write(to: appURL.appendingPathComponent("RunnerFeatures.plist"))
-            NSLog("[host] re-enabled required features for %@", appURL.lastPathComponent as NSString)
-        }
+        for (key, value) in defaults where plist[key] == nil { plist[key] = value }
+        for (key, value) in update { plist[key] = value }
+        for key in remove { plist.removeValue(forKey: key) }
+        writePlist(plist, to: appURL.appendingPathComponent("RunnerFeatures.plist"))
     }
 
     /// Runtime mode for a guest; missing key = Catalyst (legacy behavior).
@@ -698,14 +579,6 @@ enum GuestStore {
     }
 
     static func readInfoPlist(at appURL: URL) -> [String: Any]? {
-        let plistURL = appURL.appendingPathComponent("Info.plist")
-        guard let data = try? Data(contentsOf: plistURL),
-              let plist = try? PropertyListSerialization.propertyList(from: data,
-                                                                      options: [],
-                                                                      format: nil) as? [String: Any] else {
-            return nil
-        }
-        return plist
+        readPlist(at: appURL.appendingPathComponent("Info.plist"))
     }
-
 }

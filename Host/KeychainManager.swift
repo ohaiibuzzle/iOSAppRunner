@@ -64,12 +64,6 @@ enum KeychainManager {
         (registry as NSDictionary).write(to: registryURL, atomically: true)
     }
 
-    /// Current slot for a bundle ID, or nil.
-    static func slot(for bundleID: String) -> Int32? {
-        let registry = readRegistry()
-        return (registry[bundleID] as? NSNumber)?.int32Value
-    }
-
     /// All assigned slots in the registry (excluding the free list).
     private static func assignedSlots(in registry: [String: Any]) -> [(bundleID: String, slot: Int32)] {
         registry.compactMap { key, value in
@@ -120,8 +114,11 @@ enum KeychainManager {
     }
 
     /// Runs `body` while holding the cross-process slot lock.
-    private static func withSlotLock<T>(_ body: () throws -> T) rethrows -> T {
+    private static func withSlotLock<T>(_ body: () throws -> T) throws -> T {
         let fd = acquireSlotLock()
+        guard fd >= 0 else {
+            throw SlotError(errorDescription: String(localized: "Timed out waiting for the keychain slot registry."))
+        }
         defer { releaseSlotLock(fd) }
         return try body()
     }
@@ -129,10 +126,9 @@ enum KeychainManager {
     // MARK: - Slot operations
 
     /// Returns the guest's slot, claiming one if it never had any (passed to
-    /// the runtime as --keychain-slot). nil on registry failure — the runtime
-    /// then falls back to its own legacy claim path.
+    /// the runtime as --keychain-slot). nil on lock or registry failure.
     static func ensureSlot(for bundleID: String) -> Int32? {
-        return withSlotLock { () -> Int32? in
+        return try? withSlotLock { () -> Int32? in
             var registry = readRegistry()
             if let existing = (registry[bundleID] as? NSNumber)?.int32Value {
                 return existing
@@ -145,38 +141,6 @@ enum KeychainManager {
             writeRegistry(registry)
             return claimed
         }
-    }
-
-    /// One-time import of the pre-split registry from the legacy container;
-    /// runs before the guest migration so migrated guests keep their slots.
-    static func importLegacyAssignmentsIfNeeded() {
-        let fm = FileManager.default
-        guard !fm.fileExists(atPath: registryURL.path) else { return }
-        let legacyURL = GuestPaths.legacyContainerDirectory
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("keychain_slots.plist")
-        guard let legacy = NSDictionary(contentsOfFile: legacyURL.path) as? [String: Any],
-              !legacy.isEmpty else { return }
-
-        var assignments: [String: Int32] = [:]
-        for (key, value) in legacy where key != "free_list" {
-            if let num = value as? NSNumber {
-                assignments[key] = num.int32Value
-            }
-        }
-        guard !assignments.isEmpty else { return }
-
-        // Free list = every slot not assigned.
-        var registry: [String: Any] = [:]
-        for (bundleID, slot) in assignments.sorted(by: { $0.key < $1.key }) {
-            registry[bundleID] = NSNumber(value: slot)
-        }
-        let assigned = Set(assignments.values)
-        registry["free_list"] = (1...maxSlotID).filter { !assigned.contains(Int32($0)) }
-            .map { NSNumber(value: $0) }
-        writeRegistry(registry)
-        NSLog("KeychainManager: imported %d slot assignments from the legacy registry",
-              assignments.count)
     }
 
     /// Deletes every keychain item in a slot's access group (all four item
@@ -209,32 +173,29 @@ enum KeychainManager {
         return deletedAnything
     }
 
+    struct SlotError: LocalizedError {
+        let errorDescription: String?
+    }
+
     /// Per-app keychain reset: deletes the guest's keychain items but keeps
     /// its slot assignment. Falls back to a fresh slot claim when the guest
-    /// never had one. Returns a user-presentable summary.
-    static func resetKeychain(bundleID: String) -> String {
-        let result = withSlotLock { () -> String in
+    /// never had one. Returns the slot that was reset.
+    static func resetKeychain(bundleID: String) throws -> Int32 {
+        try withSlotLock { () throws -> Int32 in
             var registry = readRegistry()
-
-            var slot = (registry[bundleID] as? NSNumber)?.int32Value
-            if slot == nil {
-                // Guest never had a slot; claim one so the reset lands
-                // somewhere the guest will use later.
-                guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
-                    let unknown = String(localized: "unknown error")
-                    return String(localized: "Could not reset keychain: \(claimedError ?? unknown)")
-                }
-                writeRegistry(registry)
-                slot = claimed
+            if let existing = (registry[bundleID] as? NSNumber)?.int32Value {
+                wipeSlotItems(slot: existing)
+                return existing
             }
-            guard let slot else {
-                let unknown = String(localized: "unknown error")
-                return String(localized: "Could not reset keychain: \(unknown)")
+            // Guest never had a slot; claim one so the reset lands
+            // somewhere the guest will use later.
+            guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
+                throw SlotError(errorDescription: claimedError ?? String(localized: "unknown error"))
             }
-            wipeSlotItems(slot: slot)
-            return String(localized: "Reset keychain (slot \(slot))")
+            writeRegistry(registry)
+            wipeSlotItems(slot: claimed)
+            return claimed
         }
-        return result
     }
 
     private static var claimedError: String?
@@ -264,15 +225,11 @@ enum KeychainManager {
     }
 
     /// Reclaims a guest's slot: wipe items, remove the assignment, return
-    /// the number to the free list. No-op for an unknown bundle ID. Returns
-    /// a user-presentable summary.
-    @discardableResult
-    static func releaseSlot(bundleID: String) -> String {
-        return withSlotLock { () -> String in
+    /// the number to the free list. No-op for an unknown bundle ID.
+    static func releaseSlot(bundleID: String) {
+        do { try withSlotLock {
             var registry = readRegistry()
-            guard let slot = (registry[bundleID] as? NSNumber)?.int32Value else {
-                return String(localized: "No keychain slot to release")
-            }
+            guard let slot = (registry[bundleID] as? NSNumber)?.int32Value else { return }
 
             wipeSlotItems(slot: slot)
             registry.removeValue(forKey: bundleID)
@@ -281,7 +238,10 @@ enum KeychainManager {
             freeList.append(NSNumber(value: slot))
             registry["free_list"] = freeList
             writeRegistry(registry)
-            return String(localized: "Keychain slot \(slot) wiped and reclaimed")
+            NSLog("KeychainManager: slot %d wiped and reclaimed", slot)
+        } } catch {
+            NSLog("KeychainManager: could not release slot for %@: %@",
+                  bundleID as NSString, error.localizedDescription as NSString)
         }
     }
 

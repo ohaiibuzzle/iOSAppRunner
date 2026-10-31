@@ -46,11 +46,5 @@
 	     runtimes must all carry matching keychain-access-groups entitlements. -->
 	<key>KeychainAccessGroupBase</key>
 	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp</string>
-	<!-- Bundle ID the runtime apps shared before the flavor split. The
-	     pre-split single sandbox container (~/Library/Containers/<this ID>)
-	     still holds existing guests; the host migrates them out once, then
-	     retires the directory. -->
-	<key>LegacyRuntimeBundleIdentifier</key>
-	<string>$(DEVELOPMENT_TEAM).dev.ohaiibuzzle.BaseiOSApp</string>
 </dict>
 </plist>

@@ -24,7 +24,8 @@ struct HostFeature: Identifiable {
                     detail: String(localized: "Report an iPad to apps that check hw.machine / hw.model via sysctl."))
     ]
 
-    /// Import-time-only toggles, shown in the Import sheet. Add any future
+    /// Import-time-only toggles, shown in the Compatibility sheet's Import
+    /// section; they take effect on the next re-import. Add any future
     /// convert-time features here.
     static let importOnly: [HostFeature] = [
         HostFeature(id: "scene", name: String(localized: "UIScene compatibility fix"),
@@ -36,9 +37,7 @@ struct HostFeature: Identifiable {
     /// defaults and Runtime/Loader.h.
     static let defaultValues: [String: Bool] = [
         "scene": false,
-        "groupContainer": true,
         "resolution": true,
-        "keychain": true,
         "deviceSpoof": true
     ]
 }
@@ -53,5 +52,4 @@ enum DeviceSpoofConfig {
 
     /// Built-in fallbacks used by the hooks when an override is empty.
     static let defaultMachine = "iPad14,6"
-    static let defaultModel = "iPad14,6"
 }
