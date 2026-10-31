@@ -202,13 +202,19 @@ enum GuestPaths {
 
     /// The runtime holds an exclusive flock on <guestHome>/.guest.lock while
     /// running (acquireGuestLock in main.m); the host probes it before
-    /// migrating a guest. The kernel releases flock on process death.
-    static func guestIsRunning(guestHome: URL) -> Bool {
+    /// migrating a guest. The kernel releases flock on process death, which
+    /// can trail ⌘Q by a few seconds, so a held lock is re-probed for up to
+    /// `grace` seconds. Blocks; call off the main thread.
+    static func guestIsRunning(guestHome: URL, grace: TimeInterval = 3) -> Bool {
         let lockPath = guestHome.appendingPathComponent(".guest.lock").path
         let fd = open(lockPath, O_RDWR | O_CREAT, 0o644)
         guard fd >= 0 else { return true }
         defer { close(fd) }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return true }
+        let deadline = Date().addingTimeInterval(grace)
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            guard Date() < deadline else { return true }
+            usleep(100_000)
+        }
         flock(fd, LOCK_UN)
         return false
     }
