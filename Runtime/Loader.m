@@ -6,9 +6,7 @@
 #import "Loader.h"
 
 NSString *const LoaderFeatureScene                = @"scene";
-NSString *const LoaderFeatureGroupContainer       = @"groupContainer";
 NSString *const LoaderFeatureResolution           = @"resolution";
-NSString *const LoaderFeatureKeychain             = @"keychain";
 NSString *const LoaderFeatureDeviceSpoof          = @"deviceSpoof";
 
 NSString *const LoaderSpoofKeyMachine             = @"spoofDeviceMachine";

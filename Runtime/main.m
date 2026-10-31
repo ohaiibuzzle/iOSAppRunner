@@ -80,11 +80,12 @@ static NSString *appToLaunchFromArgv(int argc, char *argv[]) {
     return nil;
 }
 
-// Host pre-assigned keychain slot (--keychain-slot); -1 for legacy launches.
+// Host-assigned keychain slot (--keychain-slot); -1 when missing or invalid.
 static int keychainSlotFromArgv(int argc, char *argv[]) {
     for (int i = 1; i + 1 < argc; i++) {
         if (strcmp(argv[i], "--keychain-slot") == 0) {
-            return atoi(argv[i + 1]);
+            int slot = atoi(argv[i + 1]);
+            return (slot >= 0 && slot <= 127) ? slot : -1;
         }
     }
     return -1;
@@ -112,18 +113,6 @@ static int acquireGuestLock(NSString *guestHomeDir) {
     return lockFD;
 }
 
-// Backward compatibility: a plain app_to_launch.txt request file in the
-// runtime's home (shared container Data directory).
-static NSString *appToLaunchFromFile(void) {
-    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"app_to_launch.txt"];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        return nil;
-    }
-    NSString *name = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
-    name = [name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    return name.length > 0 ? name : nil;
-}
-
 int main(int argc, char * argv[]) {
 #if TARGET_OS_IPHONE && !TARGET_OS_MACCATALYST
     // Spill the container marker (our bundle ID) so the host can find
@@ -139,7 +128,7 @@ int main(int argc, char * argv[]) {
     }
 #endif
 
-    NSString *appBundleName = appToLaunchFromArgv(argc, argv) ?: appToLaunchFromFile();
+    NSString *appBundleName = appToLaunchFromArgv(argc, argv);
     int keychainSlot = keychainSlotFromArgv(argc, argv);
 
     NSString *appBundlePath = nil;
@@ -160,17 +149,18 @@ int main(int argc, char * argv[]) {
     }
 
     // Access-group base is shared across flavors (Info.plist
-    // KeychainAccessGroupBase); capture bundle ID + HOME before the guest
+    // KeychainAccessGroupBase); capture the bundle ID before the guest
     // rewrites them below.
     NSString *hostAppIdentifier = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"KeychainAccessGroupBase"];
     if (hostAppIdentifier.length == 0) {
         hostAppIdentifier = [[NSBundle mainBundle] bundleIdentifier];
     }
-    NSString *hostHomeDirectory = NSHomeDirectory();
 
-    KeychainSetHostBundleID(hostAppIdentifier);
-    KeychainSetHostHome(hostHomeDirectory);
-    KeychainSetAssignedSlot(keychainSlot);
+    // Fail closed: without the hooks the guest would use the shared default access group.
+    if (keychainSlot < 0) {
+        NSLog(@"[runtime] Missing or invalid --keychain-slot; refusing to launch");
+        return 3;
+    }
 
     // Load the App.app bundle from [shared container Data]/apps/[app bundle name]
     NSBundle *appBundle = [NSBundle bundleWithPath:appBundlePath];
@@ -241,10 +231,6 @@ int main(int argc, char * argv[]) {
         method_setImplementation(class_getInstanceMethod(swiftNSProcessInfo, selector), class_getMethodImplementation(NSProcessInfo.class, selector));
     }
 
-    // Backward-compat request file is consumed once read.
-    [[NSFileManager defaultManager] removeItemAtPath:
-     [hostHomeDirectory stringByAppendingPathComponent:@"app_to_launch.txt"] error:nil];
-
     if (appBundle) {
         NSLog(@"Successfully loaded app bundle");
         // dlopen app's main executable
@@ -264,11 +250,11 @@ int main(int argc, char * argv[]) {
                 DisplayHooksInit(homeDir);
             }
 #endif
-            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureGroupContainer)) {
-                GroupContainerHooksInit();
-            }
-            if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureKeychain)) {
-                SecItemGuestHooksInit(hostAppIdentifier, appBundle.bundleIdentifier);
+            GroupContainerHooksInit();
+            // Fail closed: unhooked, the guest would share the default
+            // access group with every other guest.
+            if (!SecItemGuestHooksInit(hostAppIdentifier, keychainSlot)) {
+                return 3;
             }
             if (LoaderIsFeatureEnabled(appBundle, LoaderFeatureDeviceSpoof)) {
                 DeviceSpoofHooksInit(appBundle);

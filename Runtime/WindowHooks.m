@@ -3,6 +3,7 @@
 //  iOSAppRunner
 //
 
+#import "utils.h"
 #import "WindowHooks.h"
 #import <objc/runtime.h>
 
@@ -43,14 +44,6 @@ UIWindow *GuestAdoptSceneLessWindows(void) {
         NSLog(@"[WindowHooks] adopted guest window %@ onto scene %@", guest, scene);
     }
     return guest;
-}
-
-static void WindowSwizzle(Class cls, SEL original, SEL swapped) {
-    Method origMethod = class_getInstanceMethod(cls, original);
-    Method swizzledMethod = class_getInstanceMethod(cls, swapped);
-    if (origMethod && swizzledMethod) {
-        method_exchangeImplementations(origMethod, swizzledMethod);
-    }
 }
 
 static UIWindowScene *CurrentGuestScene(void) {
@@ -96,7 +89,7 @@ static UIWindowScene *CurrentGuestScene(void) {
 void GuestWindowHooksInit(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        WindowSwizzle([UIWindow class],
+        Swizzle([UIWindow class],
                        @selector(makeKeyAndVisible),
                        @selector(hooked_makeKeyAndVisible));
     });

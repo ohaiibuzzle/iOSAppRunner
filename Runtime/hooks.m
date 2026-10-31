@@ -26,7 +26,6 @@ const char* (*orig_dyld_get_image_name)(uint32_t image_index) = _dyld_get_image_
 
 extern uint32_t appMainImageIndex;
 uint32_t lcImageIndex = 0;
-bool appExecutableFileTypeOverwritten = false;
 extern void* appExecutableHandle;
 
 
@@ -36,15 +35,18 @@ uint32_t hook_dyld_image_count(void) {
 }
 
 const struct mach_header* hook_dyld_get_image_header(uint32_t image_index) {
-    __attribute__((musttail)) return orig_dyld_get_image_header(image_index);
+    if (image_index >= lcImageIndex) image_index++; // skip the hidden runtime executable
+    return orig_dyld_get_image_header(image_index);
 }
 
 intptr_t hook_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    __attribute__((musttail)) return orig_dyld_get_image_vmaddr_slide(image_index);
+    if (image_index >= lcImageIndex) image_index++; // skip the hidden runtime executable
+    return orig_dyld_get_image_vmaddr_slide(image_index);
 }
 
 const char* hook_dyld_get_image_name(uint32_t image_index) {
-    __attribute__((musttail)) return orig_dyld_get_image_name(image_index);
+    if (image_index >= lcImageIndex) image_index++; // skip the hidden runtime executable
+    return orig_dyld_get_image_name(image_index);
 }
 
 void GuestCryptidPatchInit(void) {
@@ -77,24 +79,9 @@ void GuestCryptidPatchInit(void) {
     NSLog(@"[cryptid]: applied (cryptid=1)");
 }
 
-static void overwriteAppExecutableFileType(void) {    struct mach_header_64* appImageMachOHeader = (struct mach_header_64*) orig_dyld_get_image_header(appMainImageIndex);
-    kern_return_t kret = builtin_vm_protect(mach_task_self(), (vm_address_t)appImageMachOHeader, sizeof(appImageMachOHeader), false, PROT_READ | PROT_WRITE | VM_PROT_COPY);
-    if(kret != KERN_SUCCESS) {
-        NSLog(@"[LC] failed to change appImageMachOHeader to rw");
-    } else {
-        NSLog(@"[LC] changed appImageMachOHeader to rw");
-        appImageMachOHeader->filetype = MH_EXECUTE;
-        builtin_vm_protect(mach_task_self(), (vm_address_t)appImageMachOHeader, sizeof(appImageMachOHeader), false,  PROT_READ);
-    }
-}
-
 void* hook_dlsym(void * __handle, const char * __symbol) {
     if(__handle == (void*)RTLD_MAIN_ONLY) {
         if(strcmp(__symbol, MH_EXECUTE_SYM) == 0) {
-            if(!appExecutableFileTypeOverwritten) {
-                overwriteAppExecutableFileType();
-                appExecutableFileTypeOverwritten = true;
-            }
             return (void*)orig_dyld_get_image_header(appMainImageIndex);
         }
         __handle = appExecutableHandle;
@@ -130,8 +117,6 @@ void hook_init(void) {
     litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, _dyld_get_image_header, hook_dyld_get_image_header, nil);
     litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, _dyld_get_image_vmaddr_slide, hook_dyld_get_image_vmaddr_slide, nil);
     litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, _dyld_get_image_name, hook_dyld_get_image_name, nil);
-    
-    appExecutableFileTypeOverwritten = true;
 }
 
 void* getGuestAppHeader(void) {

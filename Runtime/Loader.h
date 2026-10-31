@@ -8,9 +8,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT NSString *const LoaderFeatureScene;
-FOUNDATION_EXPORT NSString *const LoaderFeatureGroupContainer;
 FOUNDATION_EXPORT NSString *const LoaderFeatureResolution;
-FOUNDATION_EXPORT NSString *const LoaderFeatureKeychain;
 FOUNDATION_EXPORT NSString *const LoaderFeatureDeviceSpoof;
 FOUNDATION_EXPORT NSString *const LoaderSpoofKeyMachine;   // hw.machine (e.g. "iPad14,6")
 FOUNDATION_EXPORT NSString *const LoaderSpoofKeyModel;     // hw.model (defaults to machine)

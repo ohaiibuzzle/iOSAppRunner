@@ -1,14 +1,7 @@
+#import "utils.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "Resolution.h"
-
-static void Swizzle(Class class, SEL originalSelector, SEL swizzledSelector) {
-    Method originalMethod = class_getInstanceMethod(class, originalSelector);
-    Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
-    if (originalMethod && swizzledMethod) {
-        method_exchangeImplementations(originalMethod, swizzledMethod);
-    }
-}
 
 #pragma mark - Resolution
 static NSString *const kDisplayResolutionFileName = @"display_resolution.plist";

@@ -3,16 +3,9 @@
 //  BaseiOSApp
 //
 
+#import "utils.h"
 #import "GroupContainer.h"
 #import <objc/runtime.h>
-
-static void GroupSwizzle(Class cls, SEL original, SEL swapped) {
-    Method origMethod = class_getInstanceMethod(cls, original);
-    Method swizzledMethod = class_getInstanceMethod(cls, swapped);
-    if (origMethod && swizzledMethod) {
-        method_exchangeImplementations(origMethod, swizzledMethod);
-    }
-}
 
 @implementation NSFileManager (GroupContainerHooks)
 
@@ -53,7 +46,7 @@ void GroupContainerHooksInit(void) {
             NSLog(@"[GroupContainer] original selector missing");
             return;
         }
-        GroupSwizzle(cls,
+        Swizzle(cls,
             @selector(containerURLForSecurityApplicationGroupIdentifier:),
             @selector(hooked_containerURLForSecurityApplicationGroupIdentifier:));
         NSLog(@"[GroupContainer] interposed containerURLForSecurityApplicationGroupIdentifier:");
