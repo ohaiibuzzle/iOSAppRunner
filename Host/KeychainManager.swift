@@ -54,14 +54,22 @@ enum KeychainManager {
             .appendingPathComponent("keychain_slots.plist")
     }
 
-    private static func readRegistry() -> [String: Any] {
-        (NSDictionary(contentsOfFile: registryURL.path) as? [String: Any]) ?? [:]
+    /// Throws on an unreadable registry: treating it as empty would hand
+    /// out slots that still hold other guests' items.
+    private static func readRegistry() throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: registryURL.path) else { return [:] }
+        guard let registry = NSDictionary(contentsOfFile: registryURL.path) as? [String: Any] else {
+            throw SlotError(errorDescription: String(localized: "The keychain slot registry is unreadable."))
+        }
+        return registry
     }
 
-    private static func writeRegistry(_ registry: [String: Any]) {
+    private static func writeRegistry(_ registry: [String: Any]) throws {
         try? FileManager.default.createDirectory(at: registryURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        (registry as NSDictionary).write(to: registryURL, atomically: true)
+        guard (registry as NSDictionary).write(to: registryURL, atomically: true) else {
+            throw SlotError(errorDescription: String(localized: "Couldn't save the keychain slot registry."))
+        }
     }
 
     /// All assigned slots in the registry (excluding the free list).
@@ -128,24 +136,30 @@ enum KeychainManager {
     /// Returns the guest's slot, claiming one if it never had any (passed to
     /// the runtime as --keychain-slot). nil on lock or registry failure.
     static func ensureSlot(for bundleID: String) -> Int32? {
-        return try? withSlotLock { () -> Int32? in
-            var registry = readRegistry()
-            if let existing = (registry[bundleID] as? NSNumber)?.int32Value {
-                return existing
+        do {
+            return try withSlotLock { () throws -> Int32? in
+                var registry = try readRegistry()
+                if let existing = (registry[bundleID] as? NSNumber)?.int32Value {
+                    return existing
+                }
+                guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
+                    NSLog("KeychainManager: could not claim a slot for %@: %@",
+                          bundleID as NSString, (claimedError ?? "unknown error") as NSString)
+                    return nil
+                }
+                try writeRegistry(registry)
+                return claimed
             }
-            guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
-                NSLog("KeychainManager: could not claim a slot for %@: %@",
-                      bundleID as NSString, (claimedError ?? "unknown error") as NSString)
-                return nil
-            }
-            writeRegistry(registry)
-            return claimed
+        } catch {
+            NSLog("KeychainManager: slot registry error for %@: %@",
+                  bundleID as NSString, error.localizedDescription as NSString)
+            return nil
         }
     }
 
     /// Deletes every keychain item in a slot's access group (all four item
-    /// classes, data-protection keychain).
-    @discardableResult
+    /// classes, data-protection keychain). false if any delete failed for a
+    /// reason other than there being nothing to delete.
     static func wipeSlotItems(slot: Int32) -> Bool {
         guard let group = accessGroup(for: slot) else {
             NSLog("KeychainManager: no team identifier; cannot build access group for slot \(slot)")
@@ -157,20 +171,25 @@ enum KeychainManager {
     private static func wipeAccessGroup(_ group: String) -> Bool {
         let classes: [CFString] = [kSecClassGenericPassword, kSecClassInternetPassword,
                                    kSecClassCertificate, kSecClassKey]
-        var deletedAnything = false
+        var succeeded = true
         for cls in classes {
             var query: [String: Any] = [
                 kSecClass as String: cls,
-                kSecUseDataProtectionKeychain as String: true
+                kSecUseDataProtectionKeychain as String: true,
+                // Without this, synchronizable items never match.
+                kSecAttrSynchronizable as String: kSecAttrSynchronizableAny
             ]
             if !group.isEmpty {
                 query[kSecAttrAccessGroup as String] = group
             }
-            if SecItemDelete(query as CFDictionary) == errSecSuccess {
-                deletedAnything = true
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                NSLog("KeychainManager: deleting %@ items in %@ failed: %d",
+                      cls as NSString, group as NSString, status)
+                succeeded = false
             }
         }
-        return deletedAnything
+        return succeeded
     }
 
     struct SlotError: LocalizedError {
@@ -182,19 +201,21 @@ enum KeychainManager {
     /// never had one. Returns the slot that was reset.
     static func resetKeychain(bundleID: String) throws -> Int32 {
         try withSlotLock { () throws -> Int32 in
-            var registry = readRegistry()
-            if let existing = (registry[bundleID] as? NSNumber)?.int32Value {
-                wipeSlotItems(slot: existing)
-                return existing
+            var registry = try readRegistry()
+            var slot = (registry[bundleID] as? NSNumber)?.int32Value
+            if slot == nil {
+                // Guest never had a slot; claim one so the reset lands
+                // somewhere the guest will use later.
+                guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
+                    throw SlotError(errorDescription: claimedError ?? String(localized: "unknown error"))
+                }
+                try writeRegistry(registry)
+                slot = claimed
             }
-            // Guest never had a slot; claim one so the reset lands
-            // somewhere the guest will use later.
-            guard let claimed = claimSlot(bundleID: bundleID, registry: &registry) else {
-                throw SlotError(errorDescription: claimedError ?? String(localized: "unknown error"))
+            guard let slot, wipeSlotItems(slot: slot) else {
+                throw SlotError(errorDescription: String(localized: "Some keychain items couldn't be deleted."))
             }
-            writeRegistry(registry)
-            wipeSlotItems(slot: claimed)
-            return claimed
+            return slot
         }
     }
 
@@ -204,6 +225,11 @@ enum KeychainManager {
     /// the mutable registry copy.
     private static func claimSlot(bundleID: String, registry: inout [String: Any]) -> Int32? {
         claimedError = nil
+        // Bundle IDs are untrusted and share the registry's key space.
+        guard bundleID != "free_list" else {
+            claimedError = String(localized: "This app's bundle identifier is reserved.")
+            return nil
+        }
 
         var freeList = (registry["free_list"] as? [Any]) ?? []
         if let first = freeList.first as? NSNumber {
@@ -228,16 +254,21 @@ enum KeychainManager {
     /// the number to the free list. No-op for an unknown bundle ID.
     static func releaseSlot(bundleID: String) {
         do { try withSlotLock {
-            var registry = readRegistry()
+            var registry = try readRegistry()
             guard let slot = (registry[bundleID] as? NSNumber)?.int32Value else { return }
 
-            wipeSlotItems(slot: slot)
+            // Keep the slot assigned if the wipe failed, so its leftovers
+            // never reach another guest.
+            guard wipeSlotItems(slot: slot) else {
+                NSLog("KeychainManager: slot %d not reclaimed; its items couldn't be wiped", slot)
+                return
+            }
             registry.removeValue(forKey: bundleID)
 
             var freeList = ((registry["free_list"] as? [Any]) ?? [])
             freeList.append(NSNumber(value: slot))
             registry["free_list"] = freeList
-            writeRegistry(registry)
+            try writeRegistry(registry)
             NSLog("KeychainManager: slot %d wiped and reclaimed", slot)
         } } catch {
             NSLog("KeychainManager: could not release slot for %@: %@",
@@ -252,7 +283,8 @@ enum KeychainManager {
                                    kSecClassCertificate, kSecClassKey]
 
         var slots: Set<Int32> = [0]
-        for (bundleID, slot) in assignedSlots(in: readRegistry()) {
+        // An unreadable registry is fine here: the entitled groups cover every slot.
+        for (bundleID, slot) in assignedSlots(in: (try? readRegistry()) ?? [:]) {
             slots.insert(slot)
             NSLog("KeychainManager: registry slot %d — %@", slot, bundleID as NSString)
         }
@@ -301,7 +333,8 @@ enum KeychainManager {
                 kSecClass: cls,
                 kSecMatchLimit: kSecMatchLimitAll,
                 kSecReturnAttributes: true,
-                kSecUseDataProtectionKeychain: kCFBooleanTrue
+                kSecUseDataProtectionKeychain: kCFBooleanTrue,
+                kSecAttrSynchronizable: kSecAttrSynchronizableAny
             ]
             if SecItemCopyMatching(countQuery as CFDictionary, &out) == errSecSuccess,
                let items = out as? [[String: Any]] {
@@ -309,12 +342,14 @@ enum KeychainManager {
             }
 
             if SecItemDelete([kSecClass: cls,
-                              kSecUseDataProtectionKeychain: kCFBooleanTrue] as CFDictionary) == errSecSuccess {
+                              kSecUseDataProtectionKeychain: kCFBooleanTrue,
+                              kSecAttrSynchronizable: kSecAttrSynchronizableAny] as CFDictionary) == errSecSuccess {
                 deletedSomething = true
             }
             for group in groups where SecItemDelete([kSecClass: cls,
                                                      kSecAttrAccessGroup: group,
-                                                     kSecUseDataProtectionKeychain: kCFBooleanTrue] as CFDictionary) == errSecSuccess {
+                                                     kSecUseDataProtectionKeychain: kCFBooleanTrue,
+                                                     kSecAttrSynchronizable: kSecAttrSynchronizableAny] as CFDictionary) == errSecSuccess {
                 deletedSomething = true
             }
         }
