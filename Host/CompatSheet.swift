@@ -15,10 +15,44 @@ struct CompatSettingsView: View {
     let app: InstalledApp
     @EnvironmentObject private var model: HostModel
     @Environment(\.dismiss) private var dismiss
+    @State private var spoofResetToken = 0
+
+    /// Names the app being edited; closing the sheet migrates its data.
+    private var header: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let icon = model.icons[app.id] {
+                    Image(nsImage: icon)
+                        .resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.gray.opacity(0.25))
+                        Image(systemName: "app.fill")
+                            .foregroundStyle(.gray)
+                    }
+                }
+            }
+            .frame(width: 40, height: 40)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.displayName)
+                    .font(.headline)
+                if let bid = app.bundleIdentifier {
+                    Text(bid)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
+                header
                 Section {
                     Picker("Runtime", selection: Binding(
                         get: { model.runtimeMode(for: app) },
@@ -43,7 +77,7 @@ struct CompatSettingsView: View {
                 }
 
                 if model.featureEnabled("deviceSpoof", for: app) {
-                    DeviceSpoofFields(app: app)
+                    DeviceSpoofFields(app: app, resetToken: spoofResetToken)
                         .environmentObject(model)
                 }
 
@@ -52,14 +86,14 @@ struct CompatSettingsView: View {
                 } header: {
                     Text("Import")
                 } footer: {
-                    Text("Applies the next time this app is imported.")
+                    Text("Applies when you re-import this app's IPA.")
                 }
             }
             .formStyle(.grouped)
             .frame(minWidth: 480, minHeight: 480)
 
             HStack {
-                Button("Reset") {
+                Button("Restore Defaults") {
                     for feature in HostFeature.all {
                         model.setFeature(feature.id, enabled: HostFeature.defaultValues[feature.id] ?? true, for: app)
                     }
@@ -68,7 +102,9 @@ struct CompatSettingsView: View {
                                 DeviceSpoofConfig.osVersionKey] {
                         model.setSpoofOverride(key, value: "", for: app)
                     }
+                    spoofResetToken += 1
                 }
+                .help("Resets the hooks and device identity; the runtime choice is kept.")
                 Spacer()
                 Button("Done") {
                     model.compatSheetApp = nil
@@ -89,7 +125,7 @@ struct CompatSettingsView: View {
                 Text(feature.name)
                 Text(feature.detail)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -101,6 +137,8 @@ struct CompatSettingsView: View {
 /// defaults.
 struct DeviceSpoofFields: View {
     let app: InstalledApp
+    /// Bumped by Restore Defaults so the fields re-read their values.
+    let resetToken: Int
     @EnvironmentObject private var model: HostModel
 
     /// Real (unspoofed) host identity, for the field hints.
@@ -132,16 +170,37 @@ struct DeviceSpoofFields: View {
     }
 
     private func spoofField(_ title: String, key: String, placeholder: String, hint: String) -> some View {
+        SpoofField(app: app, resetToken: resetToken, title: title, key: key, placeholder: placeholder, hint: hint)
+    }
+}
+
+/// Text field with a local draft: the model trims before writing, so the
+/// field never reads the trimmed value back while the user types.
+private struct SpoofField: View {
+    let app: InstalledApp
+    let resetToken: Int
+    let title: String
+    let key: String
+    let placeholder: String
+    let hint: String
+    @EnvironmentObject private var model: HostModel
+    @State private var text = ""
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-            TextField(placeholder, text: Binding(
-                get: { model.spoofOverride(key, for: app) },
-                set: { model.setSpoofOverride(key, value: $0, for: app) }
-            ))
-            .textFieldStyle(.roundedBorder)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                // Written on every change, not on disappear: closing the
+                // sheet may already be migrating the bundle by then.
+                .onChange(of: text) { _, newValue in
+                    model.setSpoofOverride(key, value: newValue, for: app)
+                }
+                .onAppear { text = model.spoofOverride(key, for: app) }
+                .onChange(of: resetToken) { _, _ in text = model.spoofOverride(key, for: app) }
             Text(hint)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }

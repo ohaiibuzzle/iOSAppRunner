@@ -29,7 +29,7 @@ struct HostFeature: Identifiable {
     /// convert-time features here.
     static let importOnly: [HostFeature] = [
         HostFeature(id: "scene", name: String(localized: "UIScene compatibility fix"),
-                    detail: String(localized: "Inject a scene manifest for legacy apps that uses the legacy UIScene lifecycle."))
+                    detail: String(localized: "Inject a scene manifest for older apps that don't adopt the UIScene lifecycle."))
     ]
 
     /// Default enabled-state per feature. `scene` (import-time) is default-OFF;

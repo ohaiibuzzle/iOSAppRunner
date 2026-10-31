@@ -231,10 +231,10 @@ enum RuntimeLauncher {
     /// the Compat sheet's job, so a residence/mode mismatch is an interrupted
     /// switch and is refused (fail closed). The keychain slot is claimed here
     /// and passed to the runtime — the runtime never negotiates slots itself.
-    static func launch(installName: String, guestBundleID: String?) -> LaunchOutcome {
+    static func launch(installName: String, guestBundleID: String?, displayName: String) -> LaunchOutcome {
         guard let located = GuestStore.locateInstalledGuest(installName: installName) else {
             return LaunchOutcome(ok: false,
-                                 message: String(localized: "\(installName) is not installed."))
+                                 message: String(localized: "\(displayName) is not installed."))
         }
         let mode = GuestStore.runtimeMode(for: located.url)
         let flavor: RuntimeFlavor = mode == .ios ? .ios : .catalyst
@@ -244,7 +244,7 @@ enum RuntimeLauncher {
         guard located.flavor == flavor else {
             return LaunchOutcome(ok: false, message:
                 String(localized:
-                    "\(installName) is set to the \(flavor.displayName) runtime, but its data still resides in the \(located.flavor.displayName) container.")
+                    "\(displayName) is set to the \(flavor.displayName) runtime, but its data still resides in the \(located.flavor.displayName) container.")
                 + String(localized:
                     " Open its Compatibility Settings and close the sheet to finish the switch."))
         }
@@ -279,18 +279,18 @@ enum RuntimeLauncher {
             if FileManager.default.fileExists(atPath: targetHome.path),
                GuestPaths.guestIsRunning(guestHome: targetHome) {
                 return LaunchOutcome(ok: false,
-                                     message: String(localized: "\(installName) is already running; quit it first."))
+                                     message: String(localized: "\(displayName) is already running; quit it first."))
             }
         }
 
         // The runtime fails closed without a slot, so refuse here with a clear message.
         guard let guestBundleID else {
             return LaunchOutcome(ok: false,
-                                 message: String(localized: "\(installName) has no bundle identifier."))
+                                 message: String(localized: "\(displayName) has no bundle identifier."))
         }
         guard let slot = KeychainManager.ensureSlot(for: guestBundleID) else {
             return LaunchOutcome(ok: false,
-                                 message: String(localized: "Could not assign a keychain slot for \(installName). Free one by deleting an unused app, then try again."))
+                                 message: String(localized: "Could not assign a keychain slot for \(displayName). Free one by deleting an unused app, then try again."))
         }
         writeDisplayMetrics(flavor)
 

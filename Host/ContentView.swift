@@ -14,13 +14,17 @@ struct ContentView: View {
     @State private var selection: InstalledApp?
     /// Auto-dismisses the floating status toast once work has finished.
     @State private var toastDismissTask: Task<Void, Never>?
+    /// True while an IPA drag hovers the window.
+    @State private var isDropTargeted = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
             List(selection: $selection) {
                 installedAppsSection
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
+            // No zebra stripes: filler stripes use the default row height
+            // and clash with the taller icon rows.
+            .listStyle(.inset)
             // Native double-click / Return launch; per-row tap gestures
             // fought with list selection.
             .contextMenu(forSelectionType: InstalledApp.self) { apps in
@@ -31,9 +35,21 @@ struct ContentView: View {
             .overlay { emptyState }
             .dropDestination(for: URL.self) { urls, _ in
                 let ipas = urls.filter { $0.pathExtension.lowercased() == "ipa" }
-                guard !ipas.isEmpty, !model.isWorking else { return false }
+                guard !model.isWorking else { return false }
+                guard !ipas.isEmpty else {
+                    model.postInfo(String(localized: "Only .ipa files can be imported"))
+                    return false
+                }
                 Task { await model.importIPAs(ipas) }
                 return true
+            } isTargeted: { isDropTargeted = $0 }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                        .padding(6)
+                        .allowsHitTesting(false)
+                }
             }
             .safeAreaInset(edge: .top) { signingBanner }
 
@@ -79,24 +95,24 @@ struct ContentView: View {
     @ViewBuilder
     private var signingBanner: some View {
         if let expiry = model.signingExpiry, expiry.timeIntervalSinceNow < 2 * 24 * 60 * 60 {
-            Label("Signing expires \(expiry.formatted(.relative(presentation: .named))). Rebuild the app with the same Apple ID.",
+            let relative = expiry.formatted(.relative(presentation: .named))
+            let expired = expiry < .now
+            Label(expired
+                  ? String(localized: "Signing expired \(relative). Rebuild the app with the same Apple ID to keep launching apps.")
+                  : String(localized: "Signing expires \(relative). Rebuild the app with the same Apple ID."),
                   systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
                 .padding(8)
                 .frame(maxWidth: .infinity)
-                .background(.yellow.opacity(0.2))
+                .background((expired ? Color.red : Color.yellow).opacity(0.2))
         }
     }
 
     @ViewBuilder
     private var installedAppsSection: some View {
-        if !model.apps.isEmpty {
-            Section("Installed apps") {
-                ForEach(model.apps) { app in
-                    AppRow(app: app, model: model)
-                        .tag(app)
-                }
-            }
+        ForEach(model.apps) { app in
+            AppRow(app: app, model: model)
+                .tag(app)
         }
     }
 
@@ -252,10 +268,10 @@ struct ContentView: View {
 
         func body(content: Content) -> some View {
             content.alert(
-                "Error",
+                model.errorTitle ?? String(localized: "Something Went Wrong"),
                 isPresented: Binding(
                     get: { model.errorMessage != nil },
-                    set: { if !$0 { model.errorMessage = nil } }
+                    set: { if !$0 { model.errorMessage = nil; model.errorTitle = nil } }
                 )
             ) {
                 Button("OK", role: .cancel) { }

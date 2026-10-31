@@ -22,11 +22,33 @@ struct InstalledApp: Identifiable, Hashable {
 final class HostModel: ObservableObject {
     @Published var apps: [InstalledApp] = []
     @Published var isWorking: Bool = false
-    @Published var status: String = ""
+    /// Any plain assignment resets the info style; see `postInfo(_:)`.
+    @Published var status: String = "" {
+        didSet { statusIsInfo = false }
+    }
+    /// True when `status` is a neutral notice rather than a success; the
+    /// toast shows an info icon instead of the green checkmark.
+    @Published var statusIsInfo = false
     /// Setting an error clears the toast so a stale "Launching…" can't show
-    /// up next to a success checkmark.
+    /// up next to a success checkmark. Clearing it also clears the title.
     @Published var errorMessage: String? {
-        didSet { if errorMessage != nil { status = "" } }
+        didSet {
+            if errorMessage != nil { status = "" } else { errorTitle = nil }
+        }
+    }
+    /// Specific alert title for `errorMessage`; nil falls back to a generic one.
+    @Published var errorTitle: String?
+
+    /// Shows a neutral (non-success, non-failure) notice in the toast.
+    func postInfo(_ message: String) {
+        status = message
+        statusIsInfo = true
+    }
+
+    /// Presents an error alert with a specific title.
+    private func fail(_ title: String, _ message: String) {
+        errorTitle = title
+        errorMessage = message
     }
 
     /// List selection (drives the Guest menu commands).
@@ -216,7 +238,12 @@ final class HostModel: ObservableObject {
                 : String(localized: "Imported \(urls.count) apps")
         } else {
             status = String(localized: "Imported \(urls.count - failures.count) of \(urls.count)")
-            errorMessage = String(localized: "Some imports failed:\n\(failures.joined(separator: "\n"))")
+            let list = failures.joined(separator: "\n")
+            if failures.count == urls.count {
+                fail(String(localized: "Import Failed"), list)
+            } else {
+                fail(String(localized: "Some Imports Failed"), list)
+            }
         }
     }
 
@@ -232,7 +259,7 @@ final class HostModel: ObservableObject {
                 }.value
                 status = String(localized: "Deleted \(app.displayName)")
             } catch {
-                errorMessage = String(localized: "Could not delete \(app.displayName): \(error.localizedDescription)")
+                fail(String(localized: "Couldn't Delete \(app.displayName)"), error.localizedDescription)
             }
             isWorking = false
             reload()
@@ -246,19 +273,21 @@ final class HostModel: ObservableObject {
         guard !isWorking else { return }
         let installName = app.id
         let bundleID = app.bundleIdentifier
+        let displayName = app.displayName
 
         isWorking = true
         status = String(localized: "Launching \(app.displayName)…")
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome = RuntimeLauncher.launch(installName: installName,
-                                                 guestBundleID: bundleID)
+                                                 guestBundleID: bundleID,
+                                                 displayName: displayName)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isWorking = false
                 if outcome.ok {
                     self.status = outcome.message
                 } else {
-                    self.errorMessage = outcome.message
+                    self.fail(String(localized: "Couldn't Launch \(displayName)"), outcome.message)
                 }
             }
         }
@@ -277,9 +306,11 @@ final class HostModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isWorking = false
-                self.status = killed > 0
-                    ? String(localized: "Killed \(killed) runtime process\(killed == 1 ? "" : "es")")
-                    : String(localized: "No runtime processes were running")
+                if killed > 0 {
+                    self.status = String(localized: "Killed \(killed) runtime process\(killed == 1 ? "" : "es")")
+                } else {
+                    self.postInfo(String(localized: "No runtime processes were running"))
+                }
             }
         }
     }
@@ -289,8 +320,10 @@ final class HostModel: ObservableObject {
     /// Per-app keychain reset: deletes the guest's keychain items but keeps
     /// its slot assignment.
     func resetKeychain(for app: InstalledApp) {
+        guard !isWorking else { return }
         guard let bid = app.bundleIdentifier, !bid.isEmpty else {
-            status = String(localized: "No bundle ID; nothing to reset")
+            fail(String(localized: "Couldn't Reset Keychain"),
+                 String(localized: "\(app.displayName) has no bundle ID, so there is nothing to reset."))
             return
         }
         isWorking = true
@@ -302,7 +335,7 @@ final class HostModel: ObservableObject {
                 }.value
                 status = String(localized: "Reset keychain (slot \(slot))")
             } catch {
-                errorMessage = String(localized: "Could not reset keychain: \(error.localizedDescription)")
+                fail(String(localized: "Couldn't Reset Keychain"), error.localizedDescription)
             }
             isWorking = false
         }
@@ -387,7 +420,7 @@ final class HostModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     self?.isWorking = false
                     self?.runtimeModes[installName] = revertMode
-                    self?.errorMessage = error.localizedDescription
+                    self?.fail(String(localized: "Couldn't Switch Runtime"), error.localizedDescription)
                     self?.reload()
                 }
             }

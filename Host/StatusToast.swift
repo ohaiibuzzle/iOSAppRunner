@@ -19,8 +19,8 @@ struct StatusToast: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Image(systemName: model.statusIsInfo ? "info.circle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(model.statusIsInfo ? Color.secondary : Color.green)
                 }
                 Text(model.status)
                     .font(.callout)

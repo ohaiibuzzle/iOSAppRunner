@@ -23,7 +23,7 @@ struct AppRow: View {
                 if let bid = app.bundleIdentifier {
                     Text(bid)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -33,13 +33,12 @@ struct AppRow: View {
             // across rows (the badge text and version strings vary).
             runtimeBadge
                 .frame(width: 64)
-            if let version = app.version {
-                Text(version)
-                    .font(.caption2)
-                    .monospacedDigit()
-                    .foregroundColor(.secondary)
-                    .frame(width: 56, alignment: .trailing)
-            }
+            // Always reserve the column so the badge stays aligned.
+            Text(app.version ?? "")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
         }
         .padding(.vertical, 2)
     }
@@ -64,7 +63,7 @@ struct AppRow: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(Color.gray.opacity(0.25))
                 Image(systemName: "app.fill")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(.gray)
             }
         }
     }
