@@ -19,6 +19,14 @@ opt_in_rules:
   - sorted_imports
   - toggle_bool
 
+disabled_rules:
+  # String(decoding:as:) is lossy on purpose for argv and tool output; the
+  # failable initializer would drop the whole string on one bad byte.
+  - optional_data_string_conversion
+
+large_tuple:
+  warning: 3
+
 line_length:
   warning: 140
   error: 200
