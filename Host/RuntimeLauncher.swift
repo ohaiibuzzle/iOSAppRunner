@@ -5,6 +5,7 @@
 
 import AppKit
 import Darwin
+import Security
 
 // ptrace isn't exported to Swift by the Darwin overlay; bridge it and define
 // the request constants ourselves (sys/ptrace.h: PT_DETACH=11, PT_ATTACHEXC=14).
@@ -160,6 +161,46 @@ enum RuntimeLauncher {
         return outer
     }
 
+    // MARK: - Signing expiry
+
+    /// ExpirationDate of a bundle's embedded provisioning profile (7 days on
+    /// free Apple IDs); nil when there is none or it can't be decoded. The
+    /// profile sits beside the executable (iOS) or one level up (Contents/).
+    static func profileExpiry(of bundle: URL) -> Date? {
+        guard let execDir = executablePath(of: bundle)?.deletingLastPathComponent() else { return nil }
+        let candidates = [execDir, execDir.deletingLastPathComponent()].flatMap { dir in
+            ["embedded.mobileprovision", "embedded.provisionprofile"].map { dir.appendingPathComponent($0) }
+        }
+        guard let data = candidates.lazy.compactMap({ try? Data(contentsOf: $0) }).first,
+              !data.isEmpty else { return nil }
+
+        var decoder: CMSDecoder?
+        guard CMSDecoderCreate(&decoder) == errSecSuccess, let decoder else { return nil }
+        let updated = data.withUnsafeBytes { CMSDecoderUpdateMessage(decoder, $0.baseAddress!, $0.count) }
+        var content: CFData?
+        guard updated == errSecSuccess, CMSDecoderFinalizeMessage(decoder) == errSecSuccess,
+              CMSDecoderCopyContent(decoder, &content) == errSecSuccess, let content,
+              let plist = try? PropertyListSerialization.propertyList(from: content as Data, format: nil)
+                as? [String: Any] else { return nil }
+        return plist["ExpirationDate"] as? Date
+    }
+
+    /// Earliest profile expiry across the host and both runtimes; they're
+    /// built together, so whichever lapses first stops launches.
+    static func earliestSigningExpiry() -> Date? {
+        let bundles = [Bundle.main.bundleURL, resolveBundle(.catalyst), resolveBundle(.ios)]
+        return bundles.compactMap { $0.flatMap(profileExpiry(of:)) }.min()
+    }
+
+    /// Replaces LaunchServices' opaque refusal with the actual cause when the
+    /// runtime's profile has lapsed.
+    private static func explainingExpiry(_ outcome: LaunchOutcome, bundle: URL) -> LaunchOutcome {
+        guard !outcome.ok, let expiry = profileExpiry(of: bundle), expiry < Date() else { return outcome }
+        let when = expiry.formatted(date: .abbreviated, time: .shortened)
+        return LaunchOutcome(ok: false, message: String(localized:
+            "The runtime's signing expired on \(when). Rebuild the app with the same Apple ID."))
+    }
+
     /// Written before spawning a guest; Resolution.m reads it to size the
     /// guest's fake UIScreen. Each flavor reads it from its own container.
     static func writeDisplayMetrics(_ flavor: RuntimeFlavor) {
@@ -242,7 +283,15 @@ enum RuntimeLauncher {
             }
         }
 
-        let slot = guestBundleID.flatMap { KeychainManager.ensureSlot(for: $0) }
+        // The runtime fails closed without a slot, so refuse here with a clear message.
+        guard let guestBundleID else {
+            return LaunchOutcome(ok: false,
+                                 message: String(localized: "\(installName) has no bundle identifier."))
+        }
+        guard let slot = KeychainManager.ensureSlot(for: guestBundleID) else {
+            return LaunchOutcome(ok: false,
+                                 message: String(localized: "Could not assign a keychain slot for \(installName). Free one by deleting an unused app, then try again."))
+        }
         writeDisplayMetrics(flavor)
 
         switch flavor {
@@ -251,8 +300,8 @@ enum RuntimeLauncher {
                 return LaunchOutcome(ok: false,
                                      message: String(localized: "Runtime-iOS.app not found; build and embed the runtime target."))
             }
-            return launchiOSViaOpen(bundle: ensureWrapped(bundle), installName: installName,
-                                    keychainSlot: slot)
+            return explainingExpiry(launchiOSViaOpen(bundle: ensureWrapped(bundle), installName: installName,
+                                                     keychainSlot: slot), bundle: bundle)
         case .catalyst:
             guard let bundle = resolveBundle(.catalyst),
                   let exec = executablePath(of: bundle) else {
@@ -260,16 +309,13 @@ enum RuntimeLauncher {
                                      message: String(localized:
                                          "Runtime bundle not found (Runtime-Catalyst.app); build and embed the runtime targets."))
             }
-            return launchCatalyst(executable: exec, bundlePath: bundle.path,
-                                  installName: installName, keychainSlot: slot)
+            return explainingExpiry(launchCatalyst(executable: exec, bundlePath: bundle.path,
+                                                   installName: installName, keychainSlot: slot), bundle: bundle)
         }
     }
 
-    /// --keychain-slot args for a pre-claimed slot; empty on claim failure
-    /// (the runtime falls back to its legacy self-claim path).
-    private static func keychainSlotArgs(_ slot: Int32?) -> [String] {
-        guard let slot, slot > 0 else { return [] }
-        return ["--keychain-slot", String(slot)]
+    private static func keychainSlotArgs(_ slot: Int32) -> [String] {
+        ["--keychain-slot", String(slot)]
     }
 
     /// Ensures the iOS runtime's UUID-named container is known: warm-cache
@@ -320,7 +366,7 @@ enum RuntimeLauncher {
     // MARK: - Catalyst spawning (direct exec)
 
     private static func launchCatalyst(executable: URL, bundlePath: String, installName: String,
-                                       keychainSlot: Int32? = nil) -> LaunchOutcome {
+                                       keychainSlot: Int32) -> LaunchOutcome {
         let args = ["--launch-app", installName] + keychainSlotArgs(keychainSlot)
         let rc = spawn(executable: executable.path, args: args)
         if rc == 0 {
@@ -350,7 +396,7 @@ enum RuntimeLauncher {
     /// Launches the wrapped iOS runtime via LaunchServices. The runtime
     /// SIGSTOPs itself (--wait-for-host) and the host attaches/detaches a
     /// debugger so AMFI library validation and guest JIT are satisfied.
-    private static func launchiOSViaOpen(bundle: URL, installName: String, keychainSlot: Int32? = nil) -> LaunchOutcome {
+    private static func launchiOSViaOpen(bundle: URL, installName: String, keychainSlot: Int32) -> LaunchOutcome {
         // Strip quarantine/xattrs so Gatekeeper doesn't flag the dev-signed
         // (unnotarized) bundle as damaged.
         _ = c_stripXattrsRecursive(bundle.path)
@@ -364,7 +410,8 @@ enum RuntimeLauncher {
         }
 
         // The runtime SIGSTOPs itself right after spawn; find it and attach.
-        guard let pid = pollForRuntimePID(timeout: 8.0) else {
+        guard let exec = executablePath(of: bundle),
+              let pid = pollForRuntimePID(executable: exec, installName: installName, timeout: 8.0) else {
             return LaunchOutcome(ok: false,
                                  message: String(localized: "iOS runtime launched, but its process can't be found. Try again."))
         }
@@ -408,78 +455,79 @@ enum RuntimeLauncher {
     private static func waitForStoppedState(pid: pid_t, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let state = processState(pid: pid), state.hasPrefix("T") {
-                return true
-            }
+            if isStopped(pid) { return true }
             usleep(100 * 1000)
         }
         return false
     }
 
-    private static func processState(pid: pid_t) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-o", "stat=", "-p", String(pid)]
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        process.waitUntilExit()
-        guard let data = try? stdout.fileHandleForReading.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    // sys/proc.h's SSTOP; the macro isn't visible to Swift.
+    private static let sstop: UInt32 = 4
+
+    private static func isStopped(_ pid: pid_t) -> Bool {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size && info.pbi_status == sstop
     }
 
     // MARK: - Process discovery
 
-    private static var knownRuntimePIDs = Set<pid_t>()
-    private static let pidLock = NSLock()
+    /// proc_pidpath reports the realpath (/private/...), which Foundation's
+    /// resolvingSymlinksInPath() strips back to /tmp etc.
+    private static func realPath(_ url: URL) -> String {
+        guard let resolved = realpath(url.path, nil) else { return url.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
 
-    /// Polls for iOS runtime processes (staged paths always contain
-    /// Wrapper/Runtime-iOS.app); returns the first pid not seen before.
-    private static func pollForRuntimePID(timeout: TimeInterval) -> pid_t? {
+    /// Every pid (except ours) whose executable path is in `executables`.
+    private static func pids(running executables: Set<String>) -> [pid_t] {
+        let count = proc_listallpids(nil, 0)
+        guard count > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(count))
+        let listed = proc_listallpids(&pids, Int32(count) * Int32(MemoryLayout<pid_t>.size))
+        guard listed > 0 else { return [] }
+
+        // proc_pidpath's buffer size (PROC_PIDPATHINFO_MAXSIZE = 4*MAXPATHLEN;
+        // the C macro isn't visible to Swift).
+        let pathBufferSize = 4 * Int(MAXPATHLEN)
+        return pids.prefix(Int(listed)).filter { pid in
+            guard pid > 0, pid != getpid() else { return false }
+            var buffer = [CChar](repeating: 0, count: pathBufferSize)
+            guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { return false }
+            return executables.contains(String(cString: buffer))
+        }
+    }
+
+    /// argv of `pid` via KERN_PROCARGS2 (argc, exec path, NUL padding, then argv).
+    private static func arguments(of pid: pid_t) -> [String]? {
+        var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+        let fields = buf[MemoryLayout<Int32>.size..<size].split(separator: 0, omittingEmptySubsequences: true)
+        // fields[0] is the exec path; argv follows.
+        return fields.dropFirst().prefix(Int(argc)).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// Polls for the stopped runtime process started for exactly this guest:
+    /// right executable, `--launch-app <installName>` in argv. A guest can't
+    /// run twice (flock), so the match is unique.
+    private static func pollForRuntimePID(executable: URL, installName: String, timeout: TimeInterval) -> pid_t? {
+        let targets: Set<String> = [realPath(executable)]
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            for pid in findRuntimePIDs() {
-                var isNew = false
-                pidLock.lock()
-                if !knownRuntimePIDs.contains(pid) {
-                    knownRuntimePIDs.insert(pid)
-                    isNew = true
-                }
-                pidLock.unlock()
-                if isNew {
-                    return pid
-                }
+            for pid in pids(running: targets) where isStopped(pid) {
+                guard let argv = arguments(of: pid),
+                      let i = argv.firstIndex(of: "--launch-app"),
+                      argv.indices.contains(i + 1), argv[i + 1] == installName else { continue }
+                return pid
             }
             usleep(100 * 1000)
         }
         return nil
-    }
-
-    private static func findRuntimePIDs() -> [pid_t] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-f", "Wrapper/Runtime-iOS.app/Runtime-iOS"]
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return []
-        }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let data = try? stdout.fileHandleForReading.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else {
-            return []
-        }
-        return text.split(separator: "\n").compactMap { pid_t(Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }.filter { $0 != 0 }
     }
 
     // MARK: - Low-level helpers
@@ -534,6 +582,8 @@ enum RuntimeLauncher {
             NSLog("[launcher] spawned runtime pid %d died immediately (status=0x%x)", pid, status)
             return -1
         }
+        // Reap it when the guest quits, or it lingers as a zombie.
+        DispatchQueue.global(qos: .utility).async { _ = waitpid(pid, nil, 0) }
         return 0
     }
 
@@ -551,41 +601,16 @@ enum RuntimeLauncher {
         var targets = Set<String>()
         for flavor in [RuntimeFlavor.catalyst, RuntimeFlavor.ios] {
             if let bundle = resolveBundle(flavor), let exec = executablePath(of: bundle) {
-                targets.insert(exec.standardizedFileURL.path)
+                targets.insert(realPath(exec))
             }
         }
         guard !targets.isEmpty else { return 0 }
 
-        let count = proc_listallpids(nil, 0)
-        guard count > 0 else { return 0 }
-        var pids = [pid_t](repeating: 0, count: Int(count))
-        let listed = proc_listallpids(&pids, Int32(count) * Int32(MemoryLayout<pid_t>.size))
-        guard listed > 0 else { return 0 }
-
-        var signaled: [pid_t] = []
-        // proc_pidpath's buffer size (PROC_PIDPATHINFO_MAXSIZE = 4*MAXPATHLEN;
-        // the C macro isn't visible to Swift).
-        let pathBufferSize = 4 * Int(MAXPATHLEN)
-        for pid in pids.prefix(Int(listed)) where pid > 0 && pid != getpid() {
-            var buffer = [CChar](repeating: 0, count: pathBufferSize)
-            guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { continue }
-            guard targets.contains(String(cString: buffer)) else { continue }
-            NSLog("[launcher] killing runtime pid %d", pid)
-            kill(pid, SIGKILL) // shut up
-            signaled.append(pid)
-        }
-        let total = signaled.count
-
-        // Escalate to SIGKILL for anything that ignores SIGTERM.
-        let deadline = Date().addingTimeInterval(2)
-        while !signaled.isEmpty && Date() < deadline {
-            signaled = signaled.filter { kill($0, 0) == 0 && errno != ESRCH }
-            if !signaled.isEmpty { usleep(100 * 1000) }
-        }
+        let signaled = pids(running: targets)
         for pid in signaled {
-            NSLog("[launcher] runtime pid %d ignored SIGTERM; sending SIGKILL", pid)
+            NSLog("[launcher] killing runtime pid %d", pid)
             kill(pid, SIGKILL)
         }
-        return total
+        return signaled.count
     }
 }
